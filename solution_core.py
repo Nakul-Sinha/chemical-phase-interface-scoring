@@ -234,10 +234,12 @@ def train_fold(cfg, df, fold_arr, fold, centers, device, cache=None, log=print):
     soft_tr = soft_ordinal_targets(tr.interface_burden.values, centers, cfg.sord_sigma)
     ds_tr = ChemDataset(tr, cfg, True, soft_tr, cache)
     ds_va = ChemDataset(va, cfg, False, None, cache)
+    pw = cfg.num_workers > 0
     dl_tr = DataLoader(ds_tr, batch_size=cfg.batch_size, shuffle=True, drop_last=True,
-                       num_workers=cfg.num_workers, pin_memory=True)
+                       num_workers=cfg.num_workers, pin_memory=True, persistent_workers=pw,
+                       prefetch_factor=4 if pw else None)
     dl_va = DataLoader(ds_va, batch_size=cfg.batch_size * 2, shuffle=False,
-                       num_workers=cfg.num_workers, pin_memory=True)
+                       num_workers=cfg.num_workers, pin_memory=True, persistent_workers=pw)
     model = Net(cfg.backbone, cfg.n_bins, cfg.pretrained).to(device)
     head_ids = {id(p) for n, p in model.named_parameters() if n.startswith(("cls", "reg", "pool"))}
     params = [
