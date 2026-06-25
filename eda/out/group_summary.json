@@ -1,0 +1,8 @@
+{
+  "chosen_grouping": "near-size@2px",
+  "n_groups": 272,
+  "max_group_frac": 0.06184486373165619,
+  "w_intra_burden_std": 3.1419757062826674,
+  "global_burden_std": 19.968505253430827,
+  "n_unique_sizes_train": 688
+}

@@ -1,0 +1,45 @@
+train: (4770, 3) ['id', 'image_path', 'interface_burden']
+test : (1261, 2) ['id', 'image_path']
+sample: (1261, 2) ['id', 'interface_burden']
+train ids unique: True | test ids unique: True
+train/test id overlap: 0
+count: 4770
+min/max: 0.0 66.91325
+mean/median/std: 38.019 47.012 19.969
+  p01: 0.0
+  p05: 4.0
+  p10: 4.0
+  p25: 27.247
+  p50: 47.012
+  p75: 50.795
+  p90: 61.655
+  p95: 61.693
+  p99: 66.828
+  Z0 [0,12): 951  (19.94%)
+  Z1 [12,35): 919  (19.27%)
+  Z2 [35,48): 1067  (22.37%)
+  Z3 [48,100]: 1833  (38.43%)
+class imbalance ratio (max/min): 1.99
+sample sub burden min/mean/max: 4.0 32.26 61.62
+sample sub zone dist: [197, 507, 273, 284]
+  predict mean                       score=51.2006  (zone=43.643 abs=0.848 high=0.874 ext=5.836, zone_acc=0.224)
+  predict median                     score=46.8442  (zone=43.643 abs=0.784 high=0.424 ext=1.994, zone_acc=0.224)
+  predict zone0 center (6.0)         score=65.8515  (zone=57.885 abs=1.649 high=2.475 ext=3.843, zone_acc=0.199)
+  predict zone1 center (23.0)        score=57.6549  (zone=51.049 abs=1.138 high=1.625 ext=3.843, zone_acc=0.193)
+  predict zone2 center (41.0)        score=47.1781  (zone=43.643 abs=0.817 high=0.725 ext=1.994, zone_acc=0.224)
+  predict zone3 center (65.0)        score=45.9321  (zone=42.100 abs=1.353 high=0.486 ext=1.994, zone_acc=0.384)
+  BEST CONSTANT (50.50)              score=45.2148  (zone=42.100 abs=0.831 high=0.290 ext=1.994, zone_acc=0.384)
+  ORACLE perfect-zone centers        score=0.8171  (zone=0.000 abs=0.332 high=0.486 ext=0.000, zone_acc=1.000)
+  ORACLE perfect (y_true)            score=0.0000  (zone=0.000 abs=0.000 high=0.000 ext=0.000, zone_acc=1.000)
+
+  NOTE: zone term = 0.80*mean(0/60/100). Perfect zone => ~0.0 + tiny abs terms.
+modes: {'RGB': 400}
+width  min/median/max: 123 336 507
+height min/median/max: 250 739 1040
+unique (w,h) top: {(422, 873): 23, (408, 867): 20, (408, 870): 20, (346, 779): 16, (206, 460): 11, (212, 463): 8, (315, 680): 8, (312, 715): 8}
+aspect ratio min/median/max: 0.403 0.469 0.54
+filesize KB median: 53
+  near-grayscale: 0/20
+
+saved G:\Datacurve\eris\-Chemical-Phase-Interface-Assessment\eda\out\label_hist.png
+saved G:\Datacurve\eris\-Chemical-Phase-Interface-Assessment\eda\out\montage_by_zone.png

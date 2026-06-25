@@ -1,0 +1,18 @@
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# large / regenerable artifacts
+eda/out/emb_train.npy
+*.pth
+*.pt
+*.ckpt
+working/
+oof/
+ckpt/
+*.zip
+
+# data lives in a sibling folder, never commit it
+dataset/
+images/
