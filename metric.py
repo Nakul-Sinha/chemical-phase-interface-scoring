@@ -124,6 +124,54 @@ def decision_value_from_zone_probs(zone_probs, reg_pred=None, true_prevalence=No
     return out, chosen
 
 
+def expected_cost_decision(pmf, centers, high_frac=0.384, out_grid=None, return_loss=False):
+    """Bayes-optimal output minimizing the EXACT metric, integrating the model's
+    predictive PMF over burden. pmf: (N,K) probabilities over `centers` (K,).
+
+    Per-sample loss (the true metric factored by 1/N; argmin is unaffected):
+        l(a,y) = 0.80*zone_pen + 0.05*|a-y| + (0.05/high_frac)*|a-y|*[y>=48] + 10*extreme
+    where the high term's weight (0.05*N/N_high) reproduces the metric's
+    conditional `high_component` mean. We grid-search a over out_grid.
+    """
+    pmf = np.asarray(pmf, dtype=float)
+    centers = np.asarray(centers, dtype=float)
+    if out_grid is None:
+        out_grid = np.arange(0.0, max(centers.max(), 68.0) + 0.001, 0.5)
+    A = np.asarray(out_grid, dtype=float)
+    za = to_zone(A)[:, None]          # (nA,1)
+    zc = to_zone(centers)[None, :]    # (1,K)
+    dz = np.abs(za - zc)
+    zone_pen = np.where(dz == 0, 0.0, np.where(dz == 1, 60.0, 100.0))
+    mae = np.abs(A[:, None] - centers[None, :])
+    high_w = 0.05 / max(high_frac, 1e-6)
+    mae_high = mae * (centers[None, :] >= 48.0) * high_w
+    extreme = (((centers[None, :] <= 12.0) & (A[:, None] > 25.0)) |
+               ((centers[None, :] >= 48.0) & (A[:, None] < 40.0))).astype(float) * 10.0
+    Lmat = 0.80 * zone_pen + 0.05 * mae + mae_high + extreme   # (nA, K)
+    exp_loss = pmf @ Lmat.T            # (N, nA)
+    best = exp_loss.argmin(1)
+    out = A[best]
+    if return_loss:
+        return out, exp_loss[np.arange(len(out)), best]
+    return out
+
+
+def fit_temperature(pmf_logits, y_true, centers, grid=None):
+    """Pick a single temperature T (scaling logits) that minimizes the OOF metric
+    after the expected-cost decision. Returns (best_T, best_score)."""
+    from scipy.special import softmax
+    if grid is None:
+        grid = np.concatenate([np.arange(0.3, 1.0, 0.1), np.arange(1.0, 4.01, 0.25)])
+    best = (1.0, 1e9)
+    for T in grid:
+        pmf = softmax(np.asarray(pmf_logits) / T, axis=1)
+        pred = expected_cost_decision(pmf, centers)
+        s = evaluate(y_true, pred)
+        if s < best[1]:
+            best = (float(T), float(s))
+    return best
+
+
 if __name__ == "__main__":
     # sanity checks
     yt = np.array([5.0, 20.0, 40.0, 60.0])
