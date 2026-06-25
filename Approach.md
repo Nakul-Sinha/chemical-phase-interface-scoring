@@ -72,10 +72,12 @@ This decouples "get the zone right" (0.80 of the score) from raw calibration and
 the hard boundary. Always-safe: clip to the observed train range.
 
 ## 6. Training recipe (OOD-robust — the challenge's explicit warning)
-- **Augment to kill shortcuts, preserve physics:** horizontal flip **only** (vertical order is
-  physical: solids sink, headspace rises); moderate color/contrast/hue jitter + light grayscale to
-  break the per-experiment **color-palette** shortcut; mild blur/noise for glare/compression;
-  **C-Mixup** (mix only close-burden pairs — vanilla mixup is invalid for a continuous target).
+- **Augment LIGHTLY, preserve physics:** horizontal flip **only** (vertical order is physical:
+  solids sink, headspace rises); **light** colour/contrast/hue jitter (≈0.3) + a touch of grayscale;
+  mild blur/noise for glare/compression; **C-Mixup** (mix only close-burden pairs — vanilla mixup is
+  invalid for a continuous target). **Empirically, going harder hurt**: MixStyle and strong colour
+  augmentation *worsened* OOD here, because — contrary to the usual "destroy the colour-palette
+  shortcut" advice — **colour/intensity is the genuine turbidity signal**, not a spurious shortcut.
 - **Optimizer:** AdamW, cosine schedule + warmup, differential LR (head > backbone), AMP, **EMA**
   weights (flat minima; ConvNeXt is LayerNorm so no BN-recompute needed).
 - **Loss:** soft-CE (SORD) + 0.3·BCE(regression).
@@ -84,22 +86,37 @@ the hard boundary. Always-safe: clip to the observed train range.
 Average fold (and seed/backbone) PMFs + regression with hflip TTA → temperature → tuned decision →
 clip → RLE-free CSV (`id,interface_burden`). Strict `validate_submission.py` before any submit.
 
-## 8. Results (local leave-experiment-out CV — lower is better; updated as runs land)
+## 8. Results (honest leave-experiment-out 5-fold OOF on H100 — lower is better)
 | Run | Config | OOF score | zone_acc | Notes |
 |---|---|---|---|---|
 | baseline-constant | predict 50.5 | 45.21 | 0.38 | trivial floor |
-| oracle | true-zone centers | 0.82 | 1.00 | ceiling from zone term |
-| A (1 fold) | nano 320×192 16ep | **14.29** (pmf-exp 13.10) | 0.746 | Spearman 0.92 OOD; decision untuned |
-| B (5 fold) | nano 320×192 16ep | _in progress_ | | full baseline + decision_opt |
-| … | tiny / 384 / multi-seed / 2-backbone | _planned_ | | |
+| oracle | true-zone centers | 0.82 | 1.00 | ceiling from the zone term |
+| nano320 | convnextv2_nano 320×192 18ep b32 | **24.96** | 0.601 | best single config |
+| tiny384 | convnextv2_tiny 384×224 18ep | 31.41 | 0.530 | bigger+hi-res OVERFITS experiments → worse OOD |
+| +MixStyle | nano320 + MixStyle | 27.43 | 0.578 | hurts (perturbs the turbidity stats = signal) |
+| +strong-aug+reg | nano320 + MixStyle+colour+drop_path+WD | 28.66 | 0.581 | worst — aggressive aug destroys the colour/intensity cue |
+| batch16 | nano320 b16 | 27.05 | 0.592 | b32 better |
+| femto | convnextv2_femto 320×192 | 25.59 | **0.621** | close 2nd, adds diversity |
+| **FINAL ensemble** | 3×nano + 3×femto, OOF-avg + decision + TTA | **_<fill>_** | _<fill>_ | multi-seed variance reduction |
 
-## 9. What worked / what didn't (running)
-- **Worked:** size-based leave-experiment-out CV; SORD PMF + dual head; EMA; the model generalizes
-  OOD (Spearman 0.92) — turbidity/layering is a learnable visual signal.
+*Caveat: per-fold variance is large (±~12) — single-fold numbers (e.g. an early fold scored 14) are
+not representative; only the full 5-fold OOF is trustworthy.*
+
+## 9. What worked / what didn't
+- **Worked:** size-based leave-experiment-out CV (honest, reproducible from pixels-only); SORD PMF +
+  dual head; EMA; the **expected-cost decision** (robustly beats reg/expectation); **multi-seed
+  ensembling** (the main reliable lever given high CV variance); the model genuinely learns the
+  turbidity/layering signal (Spearman ~0.74 on held-out experiments).
+- **Didn't work (important negative results):** **bigger models / higher resolution OVERFIT the
+  training experiments → worse OOD**; **MixStyle and aggressive colour/style augmentation HURT** —
+  unlike typical "kill the colour-palette shortcut" advice, here colour/intensity *is* the genuine
+  turbidity signal, so destroying it removes signal. Smaller batch (16) and stochastic-depth did not
+  help. ⇒ the winning recipe is a **small backbone + light augmentation + ensembling**, not capacity
+  or heavy regularization.
 - **Bug caught:** OOF index misalignment (local vs global) silently produced worse-than-constant
-  scores; fixed. Lesson: always sanity-check OOF with a correlation/confusion diagnostic.
-- **Open:** expected-cost decision must be calibrated/tuned to beat simple expectation; middle-zone
-  (Z1/Z2) accuracy and the Z2↔Z3 boundary are the main score leak.
+  scores (56.1); fixed. And the decision tuner initially overfit OOF (degenerate cuts) — fixed to
+  select on the per-fold **held-out** score. Lesson: always sanity-check OOF with Spearman + a zone
+  confusion matrix, and select post-processing on held-out, never full-OOF.
 
 ## 10. Compliance
 Learned deep model on the provided public data only. **No** id/row-order/size/path-pattern shortcuts
