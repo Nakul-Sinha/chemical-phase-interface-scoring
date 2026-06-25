@@ -330,6 +330,56 @@ def train_fold(cfg, df, fold_arr, fold, centers, device, cache=None, log=print):
     return (np.concatenate(idx_all), np.concatenate(logits_all), np.concatenate(reg_all),
             {k: v.cpu() for k, v in ema.shadow.items()})
 
+def train_full(cfg, log=print):
+    """Train models on ALL train data (no held-out fold) for the final submission —
+    stronger than 80% fold models. Seeds via env FULL_SEEDS. CV is used only to pick
+    the config + the decision; these full-data models make the actual predictions."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    out = Path(cfg.out_dir); out.mkdir(parents=True, exist_ok=True)
+    df = pd.read_csv(Path(cfg.data_root) / "train.csv")
+    global _STORE
+    _STORE = load_store("train")
+    centers = cfg.centers
+    cache = {} if cfg.cache else None
+    seeds = [int(x) for x in os.environ.get("FULL_SEEDS", "42,43,44").split(",")]
+    soft = soft_ordinal_targets(df.interface_burden.values, centers, cfg.sord_sigma)
+    for seed in seeds:
+        set_seed(seed)
+        ds = ChemDataset(df, cfg, True, soft, cache)
+        pw = cfg.num_workers > 0
+        dl = DataLoader(ds, batch_size=cfg.batch_size, shuffle=True, drop_last=True,
+                        num_workers=cfg.num_workers, pin_memory=True, persistent_workers=pw,
+                        prefetch_factor=4 if pw else None)
+        model = Net(cfg.backbone, cfg.n_bins, cfg.pretrained, cfg.mixstyle, cfg.mixstyle_p, cfg.drop_path).to(device)
+        head_ids = {id(p) for n, p in model.named_parameters() if n.startswith(("cls", "reg", "pool"))}
+        params = [{"params": [p for p in model.parameters() if id(p) not in head_ids], "lr": cfg.lr},
+                  {"params": [p for p in model.parameters() if id(p) in head_ids], "lr": cfg.lr * cfg.head_lr_mult}]
+        opt = torch.optim.AdamW(params, weight_decay=cfg.weight_decay)
+        steps = len(dl) * cfg.epochs; warm = int(steps * cfg.warmup_frac)
+        def lr_at(s):
+            if s < warm: return s / max(1, warm)
+            t = (s - warm) / max(1, steps - warm); return 0.5 * (1 + math.cos(math.pi * t))
+        scaler = torch.cuda.amp.GradScaler(enabled=device == "cuda")
+        ema = EMA(model, cfg.ema_decay); gstep = 0
+        for ep in range(cfg.epochs):
+            model.train(); t0 = time.time(); running = 0.0
+            for b in dl:
+                x = b["x"].to(device, non_blocking=True); sft = b["soft"].to(device); yreg = b["y"].to(device)
+                if cfg.cmix_p > 0 and random.random() < cfg.cmix_p:
+                    x, sft, yreg = cmixup(x, sft, yreg, cfg.cmix_alpha)
+                for g in opt.param_groups: g["lr"] = (cfg.lr if g is opt.param_groups[0] else cfg.lr * cfg.head_lr_mult) * lr_at(gstep)
+                opt.zero_grad(set_to_none=True)
+                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=device == "cuda"):
+                    cl, rg = model(x)
+                    loss = soft_ce(cl, sft) + cfg.reg_weight * F.binary_cross_entropy_with_logits(rg, yreg / 100.0)
+                scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
+                ema.update(model); gstep += 1; running += loss.item()
+            log(f"  full s{seed} ep{ep+1}/{cfg.epochs} loss={running/len(dl):.4f} {time.time()-t0:.0f}s")
+        torch.save({"sd": {k: v.cpu() for k, v in ema.shadow.items()}, "cfg": asdict(cfg)},
+                   out / f"model_full_s{seed}.pt")
+        log(f"saved {out}/model_full_s{seed}.pt")
+
+
 # ----------------------------- CV orchestration -----------------------------
 def run_cv(cfg, log=print):
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -466,5 +516,7 @@ if __name__ == "__main__":
         run_cv(cfg)
     elif mode == "predict":
         predict_test(cfg)
+    elif mode == "full":
+        train_full(cfg)
     elif mode == "cv_predict":
         run_cv(cfg); predict_test(cfg)
