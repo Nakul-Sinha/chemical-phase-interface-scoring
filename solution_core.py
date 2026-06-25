@@ -69,6 +69,9 @@ class Config:
     cmix_alpha: float = _env("CMIX_ALPHA", 0.3, float)
     color_jitter: float = _env("CJ", 0.3, float)
     gray_p: float = _env("GRAY_P", 0.1, float)
+    mixstyle: bool = _env("MIXSTYLE", 0, int) == 1
+    mixstyle_p: float = _env("MIXSTYLE_P", 0.5, float)
+    drop_path: float = _env("DROP_PATH", 0.0, float)
     num_workers: int = _env("NUM_WORKERS", 0, int)
     seed: int = _env("SEED", 42, int)
     smoke: bool = _env("SMOKE", 0, int) == 1
@@ -143,16 +146,39 @@ class GeM(nn.Module):
     def forward(self, x):                      # (B,C,H,W)
         return x.clamp(min=self.eps).pow(self.p).mean((-2, -1)).pow(1.0 / self.p)
 
+class MixStyle(nn.Module):
+    """Mix instance-level feature statistics across the batch (Zhou et al. ICLR'21).
+    Applied at EARLY stages only (late stages carry label info). Train-time only."""
+    def __init__(self, p=0.5, alpha=0.1, eps=1e-6):
+        super().__init__(); self.p = p; self.eps = eps
+        self.beta = torch.distributions.Beta(alpha, alpha)
+    def forward(self, x):
+        if not self.training or random.random() > self.p or x.size(0) < 2:
+            return x
+        mu = x.mean([2, 3], keepdim=True); var = x.var([2, 3], keepdim=True)
+        sig = (var + self.eps).sqrt()
+        xn = (x - mu) / sig
+        lam = self.beta.sample((x.size(0), 1, 1, 1)).to(x.device, x.dtype)
+        perm = torch.randperm(x.size(0), device=x.device)
+        mu_mix = mu * lam + mu[perm] * (1 - lam)
+        sig_mix = sig * lam + sig[perm] * (1 - lam)
+        return xn * sig_mix + mu_mix
+
 class Net(nn.Module):
-    def __init__(self, backbone, n_bins, pretrained=True):
+    def __init__(self, backbone, n_bins, pretrained=True, mixstyle=False, mixstyle_p=0.5, drop_path=0.0):
         super().__init__()
         import timm
-        self.bb = timm.create_model(backbone, pretrained=pretrained, num_classes=0, global_pool="")
+        self.bb = timm.create_model(backbone, pretrained=pretrained, num_classes=0, global_pool="",
+                                    drop_path_rate=drop_path)
         C = self.bb.num_features
         self.pool = GeM()
         self.drop = nn.Dropout(0.1)
         self.cls = nn.Linear(C, n_bins)
         self.reg = nn.Linear(C, 1)
+        self.ms = MixStyle(p=mixstyle_p) if mixstyle else None
+        if self.ms is not None and hasattr(self.bb, "stages"):
+            for i in [0, 1, 2]:   # early stages only
+                self.bb.stages[i].register_forward_hook(lambda mod, inp, out: self.ms(out))
     def forward(self, x):
         f = self.bb.forward_features(x)        # (B,C,h,w)
         if f.ndim == 4 and f.shape[1] != self.bb.num_features and f.shape[-1] == self.bb.num_features:
@@ -260,7 +286,7 @@ def train_fold(cfg, df, fold_arr, fold, centers, device, cache=None, log=print):
                        prefetch_factor=4 if pw else None)
     dl_va = DataLoader(ds_va, batch_size=cfg.batch_size * 2, shuffle=False,
                        num_workers=cfg.num_workers, pin_memory=True, persistent_workers=pw)
-    model = Net(cfg.backbone, cfg.n_bins, cfg.pretrained).to(device)
+    model = Net(cfg.backbone, cfg.n_bins, cfg.pretrained, cfg.mixstyle, cfg.mixstyle_p, cfg.drop_path).to(device)
     head_ids = {id(p) for n, p in model.named_parameters() if n.startswith(("cls", "reg", "pool"))}
     params = [
         {"params": [p for p in model.parameters() if id(p) not in head_ids], "lr": cfg.lr},

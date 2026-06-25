@@ -43,11 +43,16 @@ Working log of challenge facts, EDA, validation, decisions, and runs.
 - Kaggle T4 (16 GB, generous hours): main 5-fold training.
 - Lightning A100 (~3 h HARD cap; do not idle): final 384-res sweeps/ensemble.
 
-## CV / Run log
-- **Pipeline validated.** Critical bug found+fixed: OOF predictions were scattered to LOCAL (reset) indices instead of GLOBAL df positions → garbage OOF (score 56.1, zone_acc 0.186, i.e. worse than constant). Fix: ChemDataset returns the original global index. Also unified train/val load scale (1.12x + center-crop, removes FixRes mismatch).
-- **Run A (fold-0 only, nano, 320x192, 16ep, EMA, hflip+colorjitter+C-Mixup):** corrected OOF score **14.29**, zone_acc 0.746, **Spearman(pred,y)=0.92 on held-out experiments** → model generalizes OOD, no collapse. pmf-expectation (13.10) currently beats expected-cost decision (14.29) → decision/calibration needs tuning on the full ensembled OOF. Hardest errors: middle zones; biggest leak Z2→Z3 at the 48 boundary (122/245 true-Z2 predicted Z3).
-- **Run B (full 5-fold, nano, 320x192, 16ep):** in progress (baseline CV). Next: decision_opt.py on full OOF (tune blend/cuts), then iterate (tiny backbone, 384 res, multi-seed ensemble, aug A/B).
-- Trivial baselines to beat: best-constant 45.2; oracle-perfect-zone 0.82.
+## CV / Run log (leave-experiment-out OOF; LOWER is better)
+- **Pipeline bug fixed:** OOF was scattered to LOCAL (reset) indices not GLOBAL → garbage (56.1). Fixed (ChemDataset returns global index). Unified train/val load scale.
+- **Compute:** all training on H100 NVL (95GB) via SSH; local/Kaggle dropped. Epoch ~6-10s. Data copied once to /mnt/chem/data.
+- **fold-0 alone gave 14.29 (Spearman 0.92) — a LUCKY easy fold.** The honest full 5-fold tells the real story:
+- **nano320** (convnextv2_nano, 320×192, 18ep, b32): full-OOF **24.96**, zone_acc 0.60, Spearman 0.74. Best decision = expected_cost (T=2.75). [BEST so far]
+- **tiny384** (convnextv2_tiny, 384×224, 18ep): full-OOF **31.41**, zone_acc 0.53, Spearman 0.59. **WORSE** — bigger model + higher res OVERFITS the training experiments → worse OOD.
+- **Decision finding:** unconstrained `blend_thresh` OVERFITS OOF (full-OOF 22.76 but per-fold held-out 32.0±10.9, degenerate cuts). Fixed `decision_opt` to select on the HONEST per-fold held-out score with constrained cuts → correctly falls back to expected_cost.
+- **Key insight: this is a REGULARIZATION-dominated OOD problem, not a capacity one.** Direction = small model + strong OOD regularization + ensembling, NOT bigger/higher-res. Per-fold variance is huge (±12) → multi-seed ensembling is high-value.
+- **In progress (matrix2):** nano320 + {MixStyle, MixStyle+strong-aug+drop_path+WD, batch16, femto} to find the best regularized recipe → then multi-seed ensemble → final.
+- Trivial baselines: best-constant 45.2; oracle-perfect-zone 0.82.
 
 ## Submissions
 - (to fill) — public score vs OOF, exact change per submission.
