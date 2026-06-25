@@ -51,7 +51,13 @@ Working log of challenge facts, EDA, validation, decisions, and runs.
 - **tiny384** (convnextv2_tiny, 384×224, 18ep): full-OOF **31.41**, zone_acc 0.53, Spearman 0.59. **WORSE** — bigger model + higher res OVERFITS the training experiments → worse OOD.
 - **Decision finding:** unconstrained `blend_thresh` OVERFITS OOF (full-OOF 22.76 but per-fold held-out 32.0±10.9, degenerate cuts). Fixed `decision_opt` to select on the HONEST per-fold held-out score with constrained cuts → correctly falls back to expected_cost.
 - **Key insight: this is a REGULARIZATION-dominated OOD problem, not a capacity one.** Direction = small model + strong OOD regularization + ensembling, NOT bigger/higher-res. Per-fold variance is huge (±12) → multi-seed ensembling is high-value.
-- **In progress (matrix2):** nano320 + {MixStyle, MixStyle+strong-aug+drop_path+WD, batch16, femto} to find the best regularized recipe → then multi-seed ensemble → final.
+- **matrix2 (OOD regularization A/B, all vs nano320 baseline 24.96/0.601):**
+  - r_ms (+MixStyle): 27.43 — WORSE. MixStyle perturbs activation mean/std, which here ENCODE the turbidity/intensity signal → destroys signal. (fp16 NaN fixed via fp32 stats.)
+  - r_all (+MixStyle+strong color+drop_path+WD): 28.66 — WORST. Aggressive aug destroys the color/intensity signal (which IS the burden cue, not a shortcut).
+  - r_bs16 (batch16): 27.05 — worse. batch32 better.
+  - r_femto (convnextv2_femto, smaller): 25.59, zone_acc **0.621** (highest) — close 2nd, adds diversity.
+  - **Conclusion: the baseline nano320 config is well-tuned; aggressive OOD aug HURTS (signal=color/texture). Real lever = multi-seed ENSEMBLE (per-fold variance ±12 is large) + light model diversity (nano+femto).**
+- **FINAL (running):** 3×nano320 + 3×femto320 (fixed fold split) → average OOF → honest decision → ensemble-predict (30 models + hflip TTA). Expect variance reduction below 24.96.
 - Trivial baselines: best-constant 45.2; oracle-perfect-zone 0.82.
 
 ## Submissions

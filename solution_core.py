@@ -74,6 +74,7 @@ class Config:
     drop_path: float = _env("DROP_PATH", 0.0, float)
     num_workers: int = _env("NUM_WORKERS", 0, int)
     seed: int = _env("SEED", 42, int)
+    fold_seed: int = _env("FOLD_SEED", 42, int)   # FIXED across seeds so OOF aligns for ensembling
     smoke: bool = _env("SMOKE", 0, int) == 1
     cache: bool = _env("CACHE", 0, int) == 1
 
@@ -155,14 +156,16 @@ class MixStyle(nn.Module):
     def forward(self, x):
         if not self.training or random.random() > self.p or x.size(0) < 2:
             return x
+        dt = x.dtype
+        x = x.float()                                  # fp32 for stable instance stats (avoids fp16 NaN)
         mu = x.mean([2, 3], keepdim=True); var = x.var([2, 3], keepdim=True)
         sig = (var + self.eps).sqrt()
         xn = (x - mu) / sig
-        lam = self.beta.sample((x.size(0), 1, 1, 1)).to(x.device, x.dtype)
+        lam = self.beta.sample((x.size(0), 1, 1, 1)).to(x.device).float()
         perm = torch.randperm(x.size(0), device=x.device)
         mu_mix = mu * lam + mu[perm] * (1 - lam)
         sig_mix = sig * lam + sig[perm] * (1 - lam)
-        return xn * sig_mix + mu_mix
+        return (xn * sig_mix + mu_mix).to(dt)
 
 class Net(nn.Module):
     def __init__(self, backbone, n_bins, pretrained=True, mixstyle=False, mixstyle_p=0.5, drop_path=0.0):
@@ -340,7 +343,7 @@ def run_cv(cfg, log=print):
     _STORE = load_store("train")
     if _STORE is not None: log(f"RAM store loaded: {len(_STORE)} train images")
     groups = compute_groups(df, cfg.data_root)
-    fold_arr = make_folds(df, groups, cfg.n_folds, cfg.seed)
+    fold_arr = make_folds(df, groups, cfg.n_folds, cfg.fold_seed)
     log(f"groups={groups.max()+1} folds={cfg.n_folds} | fold sizes={np.bincount(fold_arr).tolist()}")
     centers = cfg.centers
     cache = {} if cfg.cache else None
