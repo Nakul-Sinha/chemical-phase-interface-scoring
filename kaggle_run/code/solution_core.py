@@ -18,10 +18,22 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from PIL import Image
+import cv2
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+
+_STORE = None   # optional {id: uint8 (Hs,Ws,3)} RAM image store (set by run_cv/predict_test)
+
+def load_store(split):
+    """Load the pre-decoded image store from STORE_DIR into a {id: array} dict (views)."""
+    sd = os.environ.get("STORE_DIR")
+    if not sd or not (Path(sd) / f"{split}_imgs.npy").exists():
+        return None
+    imgs = np.load(Path(sd) / f"{split}_imgs.npy")
+    ids = json.load(open(Path(sd) / f"{split}_ids.json"))
+    return {i: imgs[k] for k, i in enumerate(ids)}
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from metric import evaluate, evaluate_components, to_zone, expected_cost_decision, fit_temperature
@@ -57,8 +69,12 @@ class Config:
     cmix_alpha: float = _env("CMIX_ALPHA", 0.3, float)
     color_jitter: float = _env("CJ", 0.3, float)
     gray_p: float = _env("GRAY_P", 0.1, float)
+    mixstyle: bool = _env("MIXSTYLE", 0, int) == 1
+    mixstyle_p: float = _env("MIXSTYLE_P", 0.5, float)
+    drop_path: float = _env("DROP_PATH", 0.0, float)
     num_workers: int = _env("NUM_WORKERS", 0, int)
     seed: int = _env("SEED", 42, int)
+    fold_seed: int = _env("FOLD_SEED", 42, int)   # FIXED across seeds so OOF aligns for ensembling
     smoke: bool = _env("SMOKE", 0, int) == 1
     cache: bool = _env("CACHE", 0, int) == 1
 
@@ -131,16 +147,41 @@ class GeM(nn.Module):
     def forward(self, x):                      # (B,C,H,W)
         return x.clamp(min=self.eps).pow(self.p).mean((-2, -1)).pow(1.0 / self.p)
 
+class MixStyle(nn.Module):
+    """Mix instance-level feature statistics across the batch (Zhou et al. ICLR'21).
+    Applied at EARLY stages only (late stages carry label info). Train-time only."""
+    def __init__(self, p=0.5, alpha=0.1, eps=1e-6):
+        super().__init__(); self.p = p; self.eps = eps
+        self.beta = torch.distributions.Beta(alpha, alpha)
+    def forward(self, x):
+        if not self.training or random.random() > self.p or x.size(0) < 2:
+            return x
+        dt = x.dtype
+        x = x.float()                                  # fp32 for stable instance stats (avoids fp16 NaN)
+        mu = x.mean([2, 3], keepdim=True); var = x.var([2, 3], keepdim=True)
+        sig = (var + self.eps).sqrt()
+        xn = (x - mu) / sig
+        lam = self.beta.sample((x.size(0), 1, 1, 1)).to(x.device).float()
+        perm = torch.randperm(x.size(0), device=x.device)
+        mu_mix = mu * lam + mu[perm] * (1 - lam)
+        sig_mix = sig * lam + sig[perm] * (1 - lam)
+        return (xn * sig_mix + mu_mix).to(dt)
+
 class Net(nn.Module):
-    def __init__(self, backbone, n_bins, pretrained=True):
+    def __init__(self, backbone, n_bins, pretrained=True, mixstyle=False, mixstyle_p=0.5, drop_path=0.0):
         super().__init__()
         import timm
-        self.bb = timm.create_model(backbone, pretrained=pretrained, num_classes=0, global_pool="")
+        self.bb = timm.create_model(backbone, pretrained=pretrained, num_classes=0, global_pool="",
+                                    drop_path_rate=drop_path)
         C = self.bb.num_features
         self.pool = GeM()
         self.drop = nn.Dropout(0.1)
         self.cls = nn.Linear(C, n_bins)
         self.reg = nn.Linear(C, 1)
+        self.ms = MixStyle(p=mixstyle_p) if mixstyle else None
+        if self.ms is not None and hasattr(self.bb, "stages"):
+            for i in [0, 1, 2]:   # early stages only
+                self.bb.stages[i].register_forward_hook(lambda mod, inp, out: self.ms(out))
     def forward(self, x):
         f = self.bb.forward_features(x)        # (B,C,h,w)
         if f.ndim == 4 and f.shape[1] != self.bb.num_features and f.shape[-1] == self.bb.num_features:
@@ -173,14 +214,22 @@ class ChemDataset(Dataset):
         self.load_h = int(cfg.img_h * 1.12)           # same scale for train & val (center-crop)
         self.load_w = int(cfg.img_w * 1.12)
         self.cache = cache_store    # dict idx->uint8 array, optional
+        self.store = _STORE         # RAM store {id: (Hs,Ws,3)} if preprocessed
+        self.ids = self.df.id.values
     def __len__(self): return len(self.df)
     def _load(self, i):
-        if self.cache is not None and i in self.cache:
-            return self.cache[i]
+        if self.store is not None:                    # fast path: from RAM, no disk
+            a = self.store[self.ids[i]]
+            if a.shape[0] != self.load_h or a.shape[1] != self.load_w:
+                a = cv2.resize(a, (self.load_w, self.load_h), interpolation=cv2.INTER_AREA)
+            return a
+        key = int(self.orig_idx[i])     # GLOBAL key: cache shared safely across folds
+        if self.cache is not None and key in self.cache:
+            return self.cache[key]
         p = Path(self.cfg.data_root) / self.df.image_path.iloc[i]
         im = Image.open(p).convert("RGB").resize((self.load_w, self.load_h), Image.BILINEAR)
         a = np.asarray(im, dtype=np.uint8)
-        if self.cache is not None: self.cache[i] = a
+        if self.cache is not None: self.cache[key] = a
         return a
     def __getitem__(self, i):
         import torchvision.transforms.v2.functional as TF
@@ -240,7 +289,7 @@ def train_fold(cfg, df, fold_arr, fold, centers, device, cache=None, log=print):
                        prefetch_factor=4 if pw else None)
     dl_va = DataLoader(ds_va, batch_size=cfg.batch_size * 2, shuffle=False,
                        num_workers=cfg.num_workers, pin_memory=True, persistent_workers=pw)
-    model = Net(cfg.backbone, cfg.n_bins, cfg.pretrained).to(device)
+    model = Net(cfg.backbone, cfg.n_bins, cfg.pretrained, cfg.mixstyle, cfg.mixstyle_p, cfg.drop_path).to(device)
     head_ids = {id(p) for n, p in model.named_parameters() if n.startswith(("cls", "reg", "pool"))}
     params = [
         {"params": [p for p in model.parameters() if id(p) not in head_ids], "lr": cfg.lr},
@@ -281,6 +330,56 @@ def train_fold(cfg, df, fold_arr, fold, centers, device, cache=None, log=print):
     return (np.concatenate(idx_all), np.concatenate(logits_all), np.concatenate(reg_all),
             {k: v.cpu() for k, v in ema.shadow.items()})
 
+def train_full(cfg, log=print):
+    """Train models on ALL train data (no held-out fold) for the final submission —
+    stronger than 80% fold models. Seeds via env FULL_SEEDS. CV is used only to pick
+    the config + the decision; these full-data models make the actual predictions."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    out = Path(cfg.out_dir); out.mkdir(parents=True, exist_ok=True)
+    df = pd.read_csv(Path(cfg.data_root) / "train.csv")
+    global _STORE
+    _STORE = load_store("train")
+    centers = cfg.centers
+    cache = {} if cfg.cache else None
+    seeds = [int(x) for x in os.environ.get("FULL_SEEDS", "42,43,44").split(",")]
+    soft = soft_ordinal_targets(df.interface_burden.values, centers, cfg.sord_sigma)
+    for seed in seeds:
+        set_seed(seed)
+        ds = ChemDataset(df, cfg, True, soft, cache)
+        pw = cfg.num_workers > 0
+        dl = DataLoader(ds, batch_size=cfg.batch_size, shuffle=True, drop_last=True,
+                        num_workers=cfg.num_workers, pin_memory=True, persistent_workers=pw,
+                        prefetch_factor=4 if pw else None)
+        model = Net(cfg.backbone, cfg.n_bins, cfg.pretrained, cfg.mixstyle, cfg.mixstyle_p, cfg.drop_path).to(device)
+        head_ids = {id(p) for n, p in model.named_parameters() if n.startswith(("cls", "reg", "pool"))}
+        params = [{"params": [p for p in model.parameters() if id(p) not in head_ids], "lr": cfg.lr},
+                  {"params": [p for p in model.parameters() if id(p) in head_ids], "lr": cfg.lr * cfg.head_lr_mult}]
+        opt = torch.optim.AdamW(params, weight_decay=cfg.weight_decay)
+        steps = len(dl) * cfg.epochs; warm = int(steps * cfg.warmup_frac)
+        def lr_at(s):
+            if s < warm: return s / max(1, warm)
+            t = (s - warm) / max(1, steps - warm); return 0.5 * (1 + math.cos(math.pi * t))
+        scaler = torch.cuda.amp.GradScaler(enabled=device == "cuda")
+        ema = EMA(model, cfg.ema_decay); gstep = 0
+        for ep in range(cfg.epochs):
+            model.train(); t0 = time.time(); running = 0.0
+            for b in dl:
+                x = b["x"].to(device, non_blocking=True); sft = b["soft"].to(device); yreg = b["y"].to(device)
+                if cfg.cmix_p > 0 and random.random() < cfg.cmix_p:
+                    x, sft, yreg = cmixup(x, sft, yreg, cfg.cmix_alpha)
+                for g in opt.param_groups: g["lr"] = (cfg.lr if g is opt.param_groups[0] else cfg.lr * cfg.head_lr_mult) * lr_at(gstep)
+                opt.zero_grad(set_to_none=True)
+                with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=device == "cuda"):
+                    cl, rg = model(x)
+                    loss = soft_ce(cl, sft) + cfg.reg_weight * F.binary_cross_entropy_with_logits(rg, yreg / 100.0)
+                scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
+                ema.update(model); gstep += 1; running += loss.item()
+            log(f"  full s{seed} ep{ep+1}/{cfg.epochs} loss={running/len(dl):.4f} {time.time()-t0:.0f}s")
+        torch.save({"sd": {k: v.cpu() for k, v in ema.shadow.items()}, "cfg": asdict(cfg)},
+                   out / f"model_full_s{seed}.pt")
+        log(f"saved {out}/model_full_s{seed}.pt")
+
+
 # ----------------------------- CV orchestration -----------------------------
 def run_cv(cfg, log=print):
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -290,8 +389,11 @@ def run_cv(cfg, log=print):
     if cfg.smoke:
         df = df.groupby(to_zone(df.interface_burden.values)).head(150).reset_index(drop=True)
         log(f"SMOKE subset: {len(df)} rows")
+    global _STORE
+    _STORE = load_store("train")
+    if _STORE is not None: log(f"RAM store loaded: {len(_STORE)} train images")
     groups = compute_groups(df, cfg.data_root)
-    fold_arr = make_folds(df, groups, cfg.n_folds, cfg.seed)
+    fold_arr = make_folds(df, groups, cfg.n_folds, cfg.fold_seed)
     log(f"groups={groups.max()+1} folds={cfg.n_folds} | fold sizes={np.bincount(fold_arr).tolist()}")
     centers = cfg.centers
     cache = {} if cfg.cache else None
@@ -365,6 +467,8 @@ def predict_test(cfg, log=print):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     out = Path(cfg.out_dir)
     test = pd.read_csv(Path(cfg.data_root) / "test.csv")
+    global _STORE
+    _STORE = load_store("test")
     centers = cfg.centers
     models = sorted(out.glob("model_f*.pt"))
     assert models, "no fold models found"
@@ -412,5 +516,7 @@ if __name__ == "__main__":
         run_cv(cfg)
     elif mode == "predict":
         predict_test(cfg)
+    elif mode == "full":
+        train_full(cfg)
     elif mode == "cv_predict":
         run_cv(cfg); predict_test(cfg)

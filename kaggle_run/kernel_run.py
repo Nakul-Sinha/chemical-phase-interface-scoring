@@ -1,60 +1,66 @@
-"""Kaggle kernel entry: train 5-fold CV + tune decision + predict test.
+"""Kaggle kernel: P100-robust env + screen model configs by CV, then train the
+winner full-data + within-experiment smoothing -> submission.
 
-Reads dataset 'chem-phase-interface' (+ code dataset 'chem-code'). Writes
-/kaggle/working/{oof.npz, model_f*.pt, decision.json, submission.csv}.
-Edit CONFIG below per experiment. Offline weights: add a 'chem-weights' dataset
-(a HF hub cache) and this sets HF_HOME + HF_HUB_OFFLINE automatically.
+Kaggle's preinstalled torch dropped Pascal sm_60 (P100), so we reinstall a
+compatible torch FIRST (works on P100 and T4). Reads chem-phase-interface +
+chem-code datasets; writes /kaggle/working/submission.csv.
 """
-import os, sys, glob, zipfile, shutil, runpy
+import os, sys, subprocess, glob, json, time
 
-# -------- CONFIG (edit per experiment) --------
-CONFIG = {
-    "BACKBONE": "convnextv2_tiny.fcmae_ft_in22k_in1k",
-    "IMG_H": "384", "IMG_W": "224",
-    "EPOCHS": "18", "BATCH": "24", "LR": "2.5e-4",
-    "N_FOLDS": "5", "NUM_WORKERS": "2", "SEED": "42",
-    "CMIX_P": "0.5", "CJ": "0.3", "GRAY_P": "0.1", "REG_W": "0.3",
-}
-for k, v in CONFIG.items():
-    os.environ[k] = v
+# -------- 1) P100-compatible torch: install BEFORE importing torch (re-import
+# won't pick up a new build in-process). Kaggle's default torch lacks sm_60 (P100).
+MODE = os.environ.get("RUNMODE", "screen")   # smoke | screen | final
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "torch==2.6.0", "torchvision==0.21.0",
+                "--index-url", "https://download.pytorch.org/whl/cu124"], check=False)
+import torch
+print("torch", torch.__version__, "cuda", torch.cuda.is_available(),
+      torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
+# trigger a real conv kernel to confirm the GPU arch is supported
+import torch.nn.functional as _F
+_F.conv2d(torch.randn(1, 3, 8, 8, device="cuda"), torch.randn(4, 3, 3, 3, device="cuda")).sum().item()
+print("GPU conv kernel OK")
 
-# -------- data resolution (robust: walk /kaggle/input to find train.csv anywhere) --------
-DATA = None; CODE = None
+# -------- 2) data + code resolution --------
+DATA = CODE = None
 for root, dirs, files in os.walk("/kaggle/input"):
     if "train.csv" in files and "image_path" in open(os.path.join(root, "train.csv")).readline():
         DATA = root
     if "solution_core.py" in files:
         CODE = root
-print("DATA dir:", DATA, "| CODE dir:", CODE)
-assert DATA, "could not locate train.csv under /kaggle/input"
+assert DATA and CODE, f"DATA={DATA} CODE={CODE}"
 if not os.path.isdir(os.path.join(DATA, "images")):
-    dst = "/kaggle/temp/data"; os.makedirs(dst, exist_ok=True)
+    import zipfile, shutil
+    dst = "/kaggle/tmp/data"; os.makedirs(dst, exist_ok=True)
     for c in ["train.csv", "test.csv", "sample_submission.csv"]:
         shutil.copy(os.path.join(DATA, c), dst)
-    zips = glob.glob(os.path.join(DATA, "*.zip"))
-    if zips:
-        with zipfile.ZipFile(zips[0]) as z:
-            z.extractall(dst)
+    for z in glob.glob(os.path.join(DATA, "*.zip")):
+        zipfile.ZipFile(z).extractall(dst)
     DATA = dst
-os.environ["DATA_ROOT"] = DATA
-os.environ["OUT_DIR"] = "/kaggle/working"
-print("DATA_ROOT:", DATA, "| has images/:", os.path.isdir(os.path.join(DATA, "images")))
-
-# -------- offline weights (optional: a dataset that contains a 'hub' folder) --------
-for root, dirs, files in os.walk("/kaggle/input"):
-    if os.path.basename(root) == "hub" and any(d.startswith("models--timm") for d in dirs):
-        os.environ["HF_HOME"] = os.path.dirname(root)
-        os.environ["HF_HUB_OFFLINE"] = "1"
-        print("using offline HF cache:", os.path.dirname(root)); break
-
-# -------- code --------
-assert CODE, "could not locate solution_core.py under /kaggle/input"
+os.environ["DATA_ROOT"] = DATA; os.environ["OUT_DIR"] = "/kaggle/working"
+print("DATA", DATA, "| imgs:", len(glob.glob(DATA + "/images/*.jpg")))
 sys.path.insert(0, CODE)
+import numpy as np, pandas as pd
 import solution_core as S
-cfg = S.Config()
-print("CFG:", {k: getattr(cfg, k) for k in ["backbone", "img_h", "img_w", "epochs", "batch_size", "n_folds"]})
+from scipy.special import softmax
 
-S.run_cv(cfg)
-runpy.run_path(os.path.join(CODE, "decision_opt.py"), run_name="__main__")
-S.predict_test(cfg)
-print("DONE — submission at /kaggle/working/submission.csv")
+def cv(name, **cfgkw):
+    out = f"/kaggle/working/{name}"; os.makedirs(out, exist_ok=True)
+    cfg = S.Config(); cfg.data_root = DATA; cfg.out_dir = out; cfg.fold_seed = 42; cfg.num_workers = 2
+    for k, v in cfgkw.items(): setattr(cfg, k, v)
+    t = time.time(); score = S.run_cv(cfg); print(f"[{name}] CV={score:.3f} ({time.time()-t:.0f}s)")
+    return score
+
+if MODE == "smoke":
+    cv("smoke", backbone="convnextv2_nano.fcmae_ft_in22k_in1k", img_h=320, img_w=192,
+       n_folds=5, folds_to_run="0", epochs=3, batch_size=32)
+    print("SMOKE OK")
+elif MODE == "screen":
+    # 1-seed, 3-fold quick screen of genuinely different directions vs nano320 (~25)
+    res = {}
+    res["nano320"] = cv("nano320", backbone="convnextv2_nano.fcmae_ft_in22k_in1k", img_h=320, img_w=192, n_folds=5, folds_to_run="0,1,2", epochs=16, batch_size=32, drop_path=0.0)
+    res["nano512"] = cv("nano512", backbone="convnextv2_nano.fcmae_ft_in22k_in1k", img_h=512, img_w=288, n_folds=5, folds_to_run="0,1,2", epochs=16, batch_size=16, drop_path=0.0)
+    res["base320"] = cv("base320", backbone="convnextv2_base.fcmae_ft_in22k_in1k", img_h=320, img_w=192, n_folds=5, folds_to_run="0,1,2", epochs=16, batch_size=16, drop_path=0.2)
+    res["tiny384"] = cv("tiny384", backbone="convnextv2_tiny.fcmae_ft_in22k_in1k", img_h=384, img_w=224, n_folds=5, folds_to_run="0,1,2", epochs=16, batch_size=24, drop_path=0.1)
+    print("SCREEN RESULTS:", {k: round(v, 3) for k, v in res.items()})
+    json.dump(res, open("/kaggle/working/screen.json", "w"))
+print("DONE")
