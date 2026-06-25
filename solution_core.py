@@ -67,8 +67,10 @@ class Config:
     ema_decay: float = _env("EMA", 0.999, float)
     cmix_p: float = _env("CMIX_P", 0.5, float)
     cmix_alpha: float = _env("CMIX_ALPHA", 0.3, float)
-    color_jitter: float = _env("CJ", 0.3, float)
+    color_jitter: float = _env("CJ", 0.3, float)       # brightness/contrast/saturation (the turbidity signal)
+    hue_jitter: float = _env("HUE", 0.045, float)      # hue rotation (reagent-colour nuisance; raise to ~0.5 for invariance)
     gray_p: float = _env("GRAY_P", 0.1, float)
+    gray_input: bool = _env("GRAY_INPUT", 0, int) == 1  # convert to grayscale always (full colour-invariance)
     mixstyle: bool = _env("MIXSTYLE", 0, int) == 1
     mixstyle_p: float = _env("MIXSTYLE_P", 0.5, float)
     drop_path: float = _env("DROP_PATH", 0.0, float)
@@ -253,7 +255,8 @@ class ChemDataset(Dataset):
                 x = TF.adjust_brightness(x, 1 + random.uniform(-cj, cj))
                 x = TF.adjust_contrast(x, 1 + random.uniform(-cj, cj))
                 x = TF.adjust_saturation(x, 1 + random.uniform(-cj, cj))
-                x = TF.adjust_hue(x, random.uniform(-cj * 0.15, cj * 0.15))
+            if self.cfg.hue_jitter > 0:
+                x = TF.adjust_hue(x, random.uniform(-self.cfg.hue_jitter, self.cfg.hue_jitter))
             if random.random() < self.cfg.gray_p:
                 g = x.mean(0, keepdim=True); x = g.repeat(3, 1, 1)
             if random.random() < 0.2:
@@ -263,6 +266,8 @@ class ChemDataset(Dataset):
         else:
             th = (x.shape[1] - H) // 2; lw = (x.shape[2] - W) // 2
             x = x[:, th:th + H, lw:lw + W].float() / 255.0
+        if self.cfg.gray_input:                          # full colour-invariance (train+val)
+            g = x.mean(0, keepdim=True); x = g.repeat(3, 1, 1)
         x = (x - IMAGENET_MEAN) / IMAGENET_STD
         out = {"x": x, "idx": int(self.orig_idx[i])}
         if self.y is not None: out["y"] = self.y[i]

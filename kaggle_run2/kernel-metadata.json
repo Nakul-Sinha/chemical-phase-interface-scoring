@@ -1,0 +1,11 @@
+{
+  "id": "nakuls1nha/chem-phase-dino",
+  "title": "chem-phase-dino",
+  "code_file": "kernel_run2.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["nakuls1nha/chem-phase-interface", "nakuls1nha/chem-code"]
+}
