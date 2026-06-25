@@ -61,8 +61,13 @@ Working log of challenge facts, EDA, validation, decisions, and runs.
 - **Ensembles (OOF-averaged PMFs, honest decision):**
   - nano-only (3 seeds): full-OOF **25.31**, honest held-out **26.18**, zone_acc 0.619. [best]
   - all-6 (nano+femto): full-OOF 25.93, honest 26.80 — femto (individually 25.8/29.7/28.0) DRAGS it down. So drop femto; nano-only wins.
-- **Realistic honest score ≈ 26** (held-out). Adding 2 more nano seeds (→5) for a more stable estimate, then final submission via ensemble_predict (nano models + hflip TTA).
-- Trivial baselines: best-constant 45.2; oracle-perfect-zone 0.82. (We're ~halfway constant→oracle on the score scale; zone_acc ~0.62 on unseen experiments.)
+- **Realistic honest score ≈ 26** (5-fold held-out). 5-seed nano ensemble full-OOF 25.93.
+- **LEADERBOARD (shown by user): A10G runtime; public top = 18.6/19.2/19.4/22.6/23.3; target <22.** Public LB is a SUBSET of test ("final rankings use the remaining portion") → our harsh leave-experiment-out CV may be conservative vs the (easier) public subset.
+- **Resolution sweep: higher res (384, 448) does NOT help** (≈28) — coarse milkiness survives downscale; fine detail invites OOD memorization. nano320 stays best.
+- **WITHIN-EXPERIMENT SMOOTHING (key new lever):** average ensemble PMF across frames of the same experiment (exact-size groups, intra-std 0.68). OOF +0.65 (25.93→25.28), but **84.6% of TEST frames are in multi-frame groups (vs train mostly singletons) so the test gain should be much larger.** Compliant: model is the predictor; grouping is allowed preprocessing.
+- **FINAL submission:** 10× full-data nano (100% train) + 25 fold models + hflip TTA + within-experiment smoothing → `working/submission.csv` (smoothed) + `submission_perframe.csv` (safe backup). Both valid (1261 rows).
+- **NEXT (critical): user submits to calibrate CV-vs-public.** If public ≈ our CV is pessimistic, smoothing+full-data likely lands <22; else reassess.
+- Trivial baselines: best-constant 45.2; oracle-perfect-zone 0.82.
 
 ## Submissions
 - (to fill) — public score vs OOF, exact change per submission.

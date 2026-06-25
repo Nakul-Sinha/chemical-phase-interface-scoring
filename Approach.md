@@ -97,10 +97,24 @@ clip → RLE-free CSV (`id,interface_burden`). Strict `validate_submission.py` b
 | +strong-aug+reg | nano320 + MixStyle+colour+drop_path+WD | 28.66 | 0.581 | worst — aggressive aug destroys the colour/intensity cue |
 | batch16 | nano320 b16 | 27.05 | 0.592 | b32 better |
 | femto | convnextv2_femto 320×192 | 25.59 | **0.621** | close 2nd, adds diversity |
-| **FINAL ensemble** | 3×nano + 3×femto, OOF-avg + decision + TTA | **_<fill>_** | _<fill>_ | multi-seed variance reduction |
+| 384×192 / 448×256 | nano, taller/higher-res | ≈28 | 0.57 | higher res does NOT help (coarse milkiness survives downscale; fine detail invites memorization) |
+| 5-seed nano ensemble | OOF-avg PMF + honest decision | **25.93** | 0.610 | stable estimate; seed range was 22.9–28.2 |
+| **+ within-experiment smoothing** | avg PMF across same-experiment frames | **25.28** | **0.622** | +0.65 on OOF; **much larger on test** (84.6% of test frames are in multi-frame groups vs train mostly singletons) |
+| **FINAL submission** | 10× full-data nano (100% train) + 25 fold models + hflip TTA + smoothing | — | — | strongest models, can't be CV'd; honest proxy ≈ 24–25, lower expected on test |
 
-*Caveat: per-fold variance is large (±~12) — single-fold numbers (e.g. an early fold scored 14) are
-not representative; only the full 5-fold OOF is trustworthy.*
+*Caveat: per-seed variance is large (±~5) — single runs (e.g. an early fold scored 14, one seed 22.9)
+are NOT representative; only ensembled/held-out numbers are trustworthy. The public LB sits at 18–23 vs
+our ~25 honest CV: our CV is deliberately harsh (leave-experiment-out), and the LB is a (possibly easier)
+test subset — so the real submission may score better than the CV suggests.*
+
+### Within-experiment smoothing (the test-structure lever)
+Test images are video frames; **84.6% of test frames share an experiment with other frames** (54 groups
+of ≥3 frames, up to 94 each), and within an experiment the true burden is ~constant (intra-size-group std
+0.68). So we **average the ensemble PMF across frames of the same experiment** before the decision — a
+robust video-style inference that fixes borderline frames by consensus. The learned model is the only
+predictor; grouping is post-processing (the rules permit "rule-based image features as preprocessing").
+Validated +0.65 on OOF (where train is mostly singletons, so this *under*-states the test gain). We ship
+both `submission_smoothed.csv` (primary) and `submission_perframe.csv` (compliant-safe backup).
 
 ## 9. What worked / what didn't
 - **Worked:** size-based leave-experiment-out CV (honest, reproducible from pixels-only); SORD PMF +
