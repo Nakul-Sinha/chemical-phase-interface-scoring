@@ -1,0 +1,84 @@
+[{"stream_name":"stdout","time":5.339117063,"data":"DATA dir: /kaggle/input/datasets/nakuls1nha/chem-phase-interface | CODE dir: /kaggle/input/datasets/nakuls1nha/chem-code\n"}
+,{"stream_name":"stdout","time":5.339190935,"data":"DATA_ROOT: /kaggle/input/datasets/nakuls1nha/chem-phase-interface | has images/: True\n"}
+,{"stream_name":"stdout","time":16.045742217,"data":"CFG: {'backbone': 'convnextv2_tiny.fcmae_ft_in22k_in1k', 'img_h': 384, 'img_w': 224, 'epochs': 18, 'batch_size': 24, 'n_folds': 5}\n"}
+,{"stream_name":"stdout","time":41.403542927,"data":"groups=272 folds=5 | fold sizes=[1094, 1110, 970, 1054, 542]\n"}
+,{"stream_name":"stderr","time":51.979107439,"data":"Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n"}
+,{"stream_name":"stderr","time":60.075088138,"data":"/usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py:435: UserWarning: \n"}
+,{"stream_name":"stderr","time":60.075126308,"data":"    Found GPU0 Tesla P100-PCIE-16GB which is of cuda capability 6.0.\n"}
+,{"stream_name":"stderr","time":60.075133506,"data":"    Minimum and Maximum cuda capability supported by this version of PyTorch is\n"}
+,{"stream_name":"stderr","time":60.075138165,"data":"    (7.0) - (12.0)\n"}
+,{"stream_name":"stderr","time":60.075144285,"data":"    \n"}
+,{"stream_name":"stderr","time":60.075152609,"data":"  queued_call()\n"}
+,{"stream_name":"stderr","time":60.0751558,"data":"/usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py:435: UserWarning: \n"}
+,{"stream_name":"stderr","time":60.075159001,"data":"    Please install PyTorch with a following CUDA\n"}
+,{"stream_name":"stderr","time":60.07516224,"data":"    configurations:  12.6 following instructions at\n"}
+,{"stream_name":"stderr","time":60.075165285,"data":"    https://pytorch.org/get-started/locally/\n"}
+,{"stream_name":"stderr","time":60.075168327,"data":"    \n"}
+,{"stream_name":"stderr","time":60.075171626,"data":"  queued_call()\n"}
+,{"stream_name":"stderr","time":60.075534524,"data":"/usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py:435: UserWarning: \n"}
+,{"stream_name":"stderr","time":60.075545042,"data":"Tesla P100-PCIE-16GB with CUDA capability sm_60 is not compatible with the current PyTorch installation.\n"}
+,{"stream_name":"stderr","time":60.0755506,"data":"The current PyTorch install supports CUDA capabilities sm_70 sm_75 sm_80 sm_86 sm_90 sm_100 sm_120.\n"}
+,{"stream_name":"stderr","time":60.07555614,"data":"If you want to use the Tesla P100-PCIE-16GB GPU with PyTorch, please check the instructions at https://pytorch.org/get-started/locally/\n"}
+,{"stream_name":"stderr","time":60.075561649,"data":"\n"}
+,{"stream_name":"stderr","time":60.075566495,"data":"  queued_call()\n"}
+,{"stream_name":"stderr","time":60.261087978,"data":"/kaggle/input/datasets/nakuls1nha/chem-code/solution_core.py:254: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.\n"}
+,{"stream_name":"stderr","time":60.261124777,"data":"  scaler = torch.cuda.amp.GradScaler(enabled=device == \"cuda\")\n"}
+,{"stream_name":"stderr","time":60.461427313,"data":"/kaggle/input/datasets/nakuls1nha/chem-code/solution_core.py:188: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /pytorch/torch/csrc/utils/tensor_numpy.cpp:213.)\n"}
+,{"stream_name":"stderr","time":60.46147767,"data":"  x = torch.from_numpy(a).permute(2, 0, 1)          # (3,H,W) uint8\n"}
+,{"stream_name":"stderr","time":60.461498444,"data":"/kaggle/input/datasets/nakuls1nha/chem-code/solution_core.py:188: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /pytorch/torch/csrc/utils/tensor_numpy.cpp:213.)\n"}
+,{"stream_name":"stderr","time":60.461503855,"data":"  x = torch.from_numpy(a).permute(2, 0, 1)          # (3,H,W) uint8\n"}
+,{"stream_name":"stderr","time":61.192996169,"data":"Traceback (most recent call last):\n"}
+,{"stream_name":"stderr","time":61.193063942,"data":"  File \"/kaggle/src/script.py\", line 57, in \u003cmodule\u003e\n"}
+,{"stream_name":"stderr","time":61.193426551,"data":"    S.run_cv(cfg)\n"}
+,{"stream_name":"stderr","time":61.193689593,"data":"  File \"/kaggle/input/datasets/nakuls1nha/chem-code/solution_core.py\", line 301, in run_cv\n"}
+,{"stream_name":"stderr","time":61.195160656,"data":"    idx, logits, reg, sd = train_fold(cfg, df, fold_arr, f, centers, device, cache, log)\n"}
+,{"stream_name":"stderr","time":61.198404602,"data":"                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.198487446,"data":"  File \"/kaggle/input/datasets/nakuls1nha/chem-code/solution_core.py\", line 266, in train_fold\n"}
+,{"stream_name":"stderr","time":61.199856435,"data":"    cl, rg = model(x)\n"}
+,{"stream_name":"stderr","time":61.200636825,"data":"             ^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.20069676,"data":"  File \"/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py\", line 1776, in _wrapped_call_impl\n"}
+,{"stream_name":"stderr","time":61.202267131,"data":"    return self._call_impl(*args, **kwargs)\n"}
+,{"stream_name":"stderr","time":61.203820919,"data":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.203907817,"data":"  File \"/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py\", line 1787, in _call_impl\n"}
+,{"stream_name":"stderr","time":61.204427118,"data":"    return forward_call(*args, **kwargs)\n"}
+,{"stream_name":"stderr","time":61.205867376,"data":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.205989365,"data":"  File \"/kaggle/input/datasets/nakuls1nha/chem-code/solution_core.py\", line 145, in forward\n"}
+,{"stream_name":"stderr","time":61.207177245,"data":"    f = self.bb.forward_features(x)        # (B,C,h,w)\n"}
+,{"stream_name":"stderr","time":61.208779465,"data":"        ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.208849472,"data":"  File \"/usr/local/lib/python3.12/dist-packages/timm/models/convnext.py\", line 608, in forward_features\n"}
+,{"stream_name":"stderr","time":61.208860897,"data":"    x = self.stem(x)\n"}
+,{"stream_name":"stderr","time":61.208866088,"data":"        ^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.208908993,"data":"  File \"/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py\", line 1776, in _wrapped_call_impl\n"}
+,{"stream_name":"stderr","time":61.208977649,"data":"    return self._call_impl(*args, **kwargs)\n"}
+,{"stream_name":"stderr","time":61.211184734,"data":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.211252114,"data":"  File \"/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py\", line 1787, in _call_impl\n"}
+,{"stream_name":"stderr","time":61.21171096,"data":"    return forward_call(*args, **kwargs)\n"}
+,{"stream_name":"stderr","time":61.213393965,"data":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.213409858,"data":"  File \"/usr/local/lib/python3.12/dist-packages/torch/nn/modules/container.py\", line 253, in forward\n"}
+,{"stream_name":"stderr","time":61.214255611,"data":"    input = module(input)\n"}
+,{"stream_name":"stderr","time":61.215023131,"data":"            ^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.21504644,"data":"  File \"/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py\", line 1776, in _wrapped_call_impl\n"}
+,{"stream_name":"stderr","time":61.215544106,"data":"    return self._call_impl(*args, **kwargs)\n"}
+,{"stream_name":"stderr","time":61.216708732,"data":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.216774096,"data":"  File \"/usr/local/lib/python3.12/dist-packages/torch/nn/modules/module.py\", line 1787, in _call_impl\n"}
+,{"stream_name":"stderr","time":61.217241344,"data":"    return forward_call(*args, **kwargs)\n"}
+,{"stream_name":"stderr","time":61.218275889,"data":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.218349277,"data":"  File \"/usr/local/lib/python3.12/dist-packages/torch/nn/modules/conv.py\", line 553, in forward\n"}
+,{"stream_name":"stderr","time":61.219676554,"data":"    return self._conv_forward(input, self.weight, self.bias)\n"}
+,{"stream_name":"stderr","time":61.221249595,"data":"           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.221263652,"data":"  File \"/usr/local/lib/python3.12/dist-packages/torch/nn/modules/conv.py\", line 548, in _conv_forward\n"}
+,{"stream_name":"stderr","time":61.221710289,"data":"    return F.conv2d(\n"}
+,{"stream_name":"stderr","time":61.222145034,"data":"           ^^^^^^^^^\n"}
+,{"stream_name":"stderr","time":61.222327033,"data":"torch.AcceleratorError: CUDA error: no kernel image is available for execution on the device\n"}
+,{"stream_name":"stderr","time":61.222334807,"data":"Search for `cudaErrorNoKernelImageForDevice' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\n"}
+,{"stream_name":"stderr","time":61.222338776,"data":"CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\n"}
+,{"stream_name":"stderr","time":61.222342186,"data":"For debugging consider passing CUDA_LAUNCH_BLOCKING=1\n"}
+,{"stream_name":"stderr","time":61.222346055,"data":"Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\n"}
+,{"stream_name":"stderr","time":61.222349426,"data":"\n"}
+,{"stream_name":"stderr","time":76.006268493,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":76.00631577,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":76.236331941,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":76.236359406,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":76.900735797,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":78.10883661,"data":"[NbConvertApp] Writing 286730 bytes to __results__.html\n"}
+]

@@ -1,0 +1,14 @@
+{
+  "id": "nakuls1nha/chem-phase-train",
+  "title": "chem-phase-train",
+  "code_file": "kernel_run.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": ["nakuls1nha/chem-phase-interface", "nakuls1nha/chem-code"],
+  "competition_sources": [],
+  "kernel_sources": []
+}

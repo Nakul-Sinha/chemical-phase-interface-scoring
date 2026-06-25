@@ -18,22 +18,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from PIL import Image
-import cv2
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-
-_STORE = None   # optional {id: uint8 (Hs,Ws,3)} RAM image store (set by run_cv/predict_test)
-
-def load_store(split):
-    """Load the pre-decoded image store from STORE_DIR into a {id: array} dict (views)."""
-    sd = os.environ.get("STORE_DIR")
-    if not sd or not (Path(sd) / f"{split}_imgs.npy").exists():
-        return None
-    imgs = np.load(Path(sd) / f"{split}_imgs.npy")
-    ids = json.load(open(Path(sd) / f"{split}_ids.json"))
-    return {i: imgs[k] for k, i in enumerate(ids)}
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from metric import evaluate, evaluate_components, to_zone, expected_cost_decision, fit_temperature
@@ -185,22 +173,14 @@ class ChemDataset(Dataset):
         self.load_h = int(cfg.img_h * 1.12)           # same scale for train & val (center-crop)
         self.load_w = int(cfg.img_w * 1.12)
         self.cache = cache_store    # dict idx->uint8 array, optional
-        self.store = _STORE         # RAM store {id: (Hs,Ws,3)} if preprocessed
-        self.ids = self.df.id.values
     def __len__(self): return len(self.df)
     def _load(self, i):
-        if self.store is not None:                    # fast path: from RAM, no disk
-            a = self.store[self.ids[i]]
-            if a.shape[0] != self.load_h or a.shape[1] != self.load_w:
-                a = cv2.resize(a, (self.load_w, self.load_h), interpolation=cv2.INTER_AREA)
-            return a
-        key = int(self.orig_idx[i])     # GLOBAL key: cache shared safely across folds
-        if self.cache is not None and key in self.cache:
-            return self.cache[key]
+        if self.cache is not None and i in self.cache:
+            return self.cache[i]
         p = Path(self.cfg.data_root) / self.df.image_path.iloc[i]
         im = Image.open(p).convert("RGB").resize((self.load_w, self.load_h), Image.BILINEAR)
         a = np.asarray(im, dtype=np.uint8)
-        if self.cache is not None: self.cache[key] = a
+        if self.cache is not None: self.cache[i] = a
         return a
     def __getitem__(self, i):
         import torchvision.transforms.v2.functional as TF
@@ -310,9 +290,6 @@ def run_cv(cfg, log=print):
     if cfg.smoke:
         df = df.groupby(to_zone(df.interface_burden.values)).head(150).reset_index(drop=True)
         log(f"SMOKE subset: {len(df)} rows")
-    global _STORE
-    _STORE = load_store("train")
-    if _STORE is not None: log(f"RAM store loaded: {len(_STORE)} train images")
     groups = compute_groups(df, cfg.data_root)
     fold_arr = make_folds(df, groups, cfg.n_folds, cfg.seed)
     log(f"groups={groups.max()+1} folds={cfg.n_folds} | fold sizes={np.bincount(fold_arr).tolist()}")
@@ -388,8 +365,6 @@ def predict_test(cfg, log=print):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     out = Path(cfg.out_dir)
     test = pd.read_csv(Path(cfg.data_root) / "test.csv")
-    global _STORE
-    _STORE = load_store("test")
     centers = cfg.centers
     models = sorted(out.glob("model_f*.pt"))
     assert models, "no fold models found"

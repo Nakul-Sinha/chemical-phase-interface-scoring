@@ -1,0 +1,22 @@
+{
+  "id": "nakuls1nha/chem-phase-train",
+  "id_no": 124739672,
+  "title": "chem-phase-train",
+  "code_file": "chem-phase-train.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [
+    "nakuls1nha/chem-code",
+    "nakuls1nha/chem-phase-interface"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [],
+  "model_sources": [],
+  "docker_image": "gcr.io/kaggle-private-byod/python@sha256:57e612b484cf3df5026ee4dcc3cb176974b22b2bc0937fb1e16132a8be4cb13c",
+  "machine_shape": "Gpu"
+}
