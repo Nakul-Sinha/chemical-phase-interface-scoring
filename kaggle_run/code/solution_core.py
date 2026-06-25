@@ -183,10 +183,16 @@ class Net(nn.Module):
             for i in [0, 1, 2]:   # early stages only
                 self.bb.stages[i].register_forward_hook(lambda mod, inp, out: self.ms(out))
     def forward(self, x):
-        f = self.bb.forward_features(x)        # (B,C,h,w)
-        if f.ndim == 4 and f.shape[1] != self.bb.num_features and f.shape[-1] == self.bb.num_features:
-            f = f.permute(0, 3, 1, 2).contiguous()   # NHWC -> NCHW safety
-        z = self.drop(self.pool(f))
+        f = self.bb.forward_features(x)
+        if f.ndim == 4:                            # CNN (B,C,h,w)
+            if f.shape[1] != self.bb.num_features and f.shape[-1] == self.bb.num_features:
+                f = f.permute(0, 3, 1, 2).contiguous()   # NHWC -> NCHW safety
+            z = self.pool(f)                       # GeM
+        elif f.ndim == 3:                          # transformer tokens (B,N,C)
+            z = f.mean(1)                          # mean-pool tokens (robust across ViT/DINOv2/Swin)
+        else:                                      # already pooled (B,C)
+            z = f
+        z = self.drop(z)
         return self.cls(z), self.reg(z).squeeze(-1)
 
 class EMA:

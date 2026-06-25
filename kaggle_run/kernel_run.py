@@ -63,4 +63,38 @@ elif MODE == "screen":
     res["tiny384"] = cv("tiny384", backbone="convnextv2_tiny.fcmae_ft_in22k_in1k", img_h=384, img_w=224, n_folds=5, folds_to_run="0,1,2", epochs=16, batch_size=24, drop_path=0.1)
     print("SCREEN RESULTS:", {k: round(v, 3) for k, v in res.items()})
     json.dump(res, open("/kaggle/working/screen.json", "w"))
+elif MODE == "screen2":
+    # genuinely-different paradigms: foundation features + different CNN family
+    res = {}
+    res["effv2s"] = cv("effv2s", backbone="tf_efficientnetv2_s.in21k_ft_in1k", img_h=320, img_w=192, n_folds=5, folds_to_run="0,1,2", epochs=16, batch_size=24, drop_path=0.1)
+    res["dinov2b"] = cv("dinov2b", backbone="vit_base_patch14_reg4_dinov2.lvd142m", img_h=322, img_w=210, n_folds=5, folds_to_run="0,1,2", epochs=12, batch_size=12, drop_path=0.1, lr=1e-4, head_lr_mult=10.0)
+    print("SCREEN2 RESULTS:", {k: round(v, 3) for k, v in res.items()})
+    json.dump(res, open("/kaggle/working/screen2.json", "w"))
+elif MODE == "final":
+    import runpy
+    BB = os.environ.get("FBB", "convnextv2_nano.fcmae_ft_in22k_in1k")
+    H, W = int(os.environ.get("FH", "320")), int(os.environ.get("FW", "192"))
+    BS, DP, EP = int(os.environ.get("FBS", "32")), float(os.environ.get("FDP", "0.0")), int(os.environ.get("FEP", "18"))
+    NS = int(os.environ.get("FSEEDS", "6"))
+    common = dict(backbone=BB, img_h=H, img_w=W, batch_size=BS, drop_path=DP, epochs=EP, n_folds=5)
+    # 1) 5-fold CV for OOF + honest decision
+    cvdir = "/kaggle/working/cv"; cfg = S.Config(); cfg.data_root = DATA; cfg.out_dir = cvdir
+    cfg.fold_seed = 42; cfg.seed = 42; cfg.num_workers = 2
+    for k, v in common.items(): setattr(cfg, k, v)
+    print("=== CV (for OOF+decision) ==="); S.run_cv(cfg)
+    os.environ["OUT_DIR"] = cvdir; runpy.run_path(CODE + "/decision_opt.py", run_name="__main__")
+    # 2) full-data models (stronger than 80% folds)
+    fulldir = "/kaggle/working/full"; cfgf = S.Config(); cfgf.data_root = DATA; cfgf.out_dir = fulldir
+    cfgf.fold_seed = 42; cfgf.num_workers = 2
+    for k, v in common.items(): setattr(cfgf, k, v)
+    os.environ["FULL_SEEDS"] = ",".join(str(42 + i) for i in range(NS))
+    print("=== full-data train ==="); S.train_full(cfgf)
+    # 3) ensemble predict (full + fold models) + within-experiment smoothing -> submission
+    os.environ["DATA_ROOT"] = DATA
+    sys.argv = ["final_predict.py", fulldir, cvdir, cvdir]   # models from full+cv; decision/oof in cvdir
+    runpy.run_path(CODE + "/final_predict.py", run_name="__main__")
+    import shutil
+    src = cvdir + "/submission_smoothed.csv"
+    if os.path.exists(src): shutil.copy(src, "/kaggle/working/submission.csv")
+    print("FINAL submission written")
 print("DONE")
