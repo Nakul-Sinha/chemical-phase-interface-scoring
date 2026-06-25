@@ -16,6 +16,8 @@ def strip(src, drop_main=True):
     for ln in lines:
         if ln.startswith("sys.path.insert"): continue
         if re.match(r"\s*from metric import", ln): continue
+        if re.match(r"\s*from solution_core import", ln): continue
+        if re.match(r"\s*import solution_core", ln): continue
         if drop_main and ln.startswith('if __name__ == "__main__":'):
             break
         out.append(ln)
@@ -56,10 +58,12 @@ if FAST:
 run_dirs = []
 for bb, ep in CONFIGS:
     for sd in SEEDS:
-        for k, v in BASE.items(): os.environ[k] = str(v)
-        os.environ["BACKBONE"] = bb; os.environ["EPOCHS"] = str(ep); os.environ["SEED"] = str(sd)
-        d = f"{OUT}/{bb.split('.')[0]}_s{sd}"; os.environ["OUT_DIR"] = d
-        cfg = Config()
+        d = f"{OUT}/{bb.split('.')[0]}_s{sd}"
+        cfg = Config()                       # set fields directly (single-process notebook)
+        cfg.data_root = DATA; cfg.out_dir = d; cfg.backbone = bb; cfg.epochs = ep; cfg.seed = sd
+        cfg.fold_seed = BASE["FOLD_SEED"]; cfg.n_folds = BASE["N_FOLDS"]
+        cfg.img_h = BASE["IMG_H"]; cfg.img_w = BASE["IMG_W"]; cfg.batch_size = BASE["BATCH"]
+        cfg.num_workers = BASE["NUM_WORKERS"]
         print(f"=== {bb} seed {sd} ===")
         run_cv(cfg)
         run_dirs.append(d)
