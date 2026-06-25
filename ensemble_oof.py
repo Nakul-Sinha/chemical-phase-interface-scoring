@@ -11,7 +11,7 @@ from scipy.special import softmax
 
 run_dirs = [Path(d) for d in sys.argv[1:-1]]
 ens = Path(sys.argv[-1]); ens.mkdir(parents=True, exist_ok=True)
-oofs = [np.load(d / "oof.npz") for d in run_dirs]
+oofs = [np.load(d / "oof.npz", allow_pickle=True) for d in run_dirs]
 # sanity: same fold split + labels
 for o in oofs[1:]:
     assert np.array_equal(o["fold"], oofs[0]["fold"]), "fold split mismatch — runs must share FOLD_SEED"
@@ -19,6 +19,6 @@ pmf = np.mean([softmax(o["logits"], 1) for o in oofs], 0)
 reg = np.mean([o["reg"] for o in oofs], 0)
 o0 = oofs[0]
 logits = np.log(pmf + 1e-12).astype(np.float32)
-np.savez(ens / "oof.npz", logits=logits, reg=reg.astype(np.float32),
-         fold=o0["fold"], y=o0["y"], done=o0["done"], centers=o0["centers"], T=np.float64(1.0), ids=o0["ids"])
+np.savez(ens / "oof.npz", logits=logits, reg=reg.astype(np.float32),    # no object arrays (drop ids)
+         fold=o0["fold"], y=o0["y"], done=o0["done"], centers=o0["centers"], T=np.float64(1.0))
 print(f"ensembled {len(run_dirs)} OOFs -> {ens/'oof.npz'}  (n={len(reg)})")

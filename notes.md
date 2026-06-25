@@ -57,8 +57,12 @@ Working log of challenge facts, EDA, validation, decisions, and runs.
   - r_bs16 (batch16): 27.05 — worse. batch32 better.
   - r_femto (convnextv2_femto, smaller): 25.59, zone_acc **0.621** (highest) — close 2nd, adds diversity.
   - **Conclusion: the baseline nano320 config is well-tuned; aggressive OOD aug HURTS (signal=color/texture). Real lever = multi-seed ENSEMBLE (per-fold variance ±12 is large) + light model diversity (nano+femto).**
-- **FINAL (running):** 3×nano320 + 3×femto320 (fixed fold split) → average OOF → honest decision → ensemble-predict (30 models + hflip TTA). Expect variance reduction below 24.96.
-- Trivial baselines: best-constant 45.2; oracle-perfect-zone 0.82.
+- **Seed variance is HUGE.** Same nano320 config, different seeds: 26.03 / 22.91 / 28.17 (range ~5!). The matrix "24.96" was a slightly-lucky single run. So single-run numbers are unreliable; only ensembled/held-out estimates are trustworthy. ⇒ ENSEMBLING is the right lever, and **honest reporting uses the per-fold held-out**, not full-OOF.
+- **Ensembles (OOF-averaged PMFs, honest decision):**
+  - nano-only (3 seeds): full-OOF **25.31**, honest held-out **26.18**, zone_acc 0.619. [best]
+  - all-6 (nano+femto): full-OOF 25.93, honest 26.80 — femto (individually 25.8/29.7/28.0) DRAGS it down. So drop femto; nano-only wins.
+- **Realistic honest score ≈ 26** (held-out). Adding 2 more nano seeds (→5) for a more stable estimate, then final submission via ensemble_predict (nano models + hflip TTA).
+- Trivial baselines: best-constant 45.2; oracle-perfect-zone 0.82. (We're ~halfway constant→oracle on the score scale; zone_acc ~0.62 on unseen experiments.)
 
 ## Submissions
 - (to fill) — public score vs OOF, exact change per submission.
