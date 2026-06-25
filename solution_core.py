@@ -332,6 +332,33 @@ def run_cv(cfg, log=print):
     log(f"saved {out/'oof.npz'} and cv_result.json")
     return comp["total"]
 
+def apply_decision(pmf, reg, centers, dc):
+    """Map per-sample PMF (+reg) to a final burden value using a decision config dc.
+    Strategies:
+      expected_cost : Bayes-optimal grid search over the exact metric (metric.py)
+      pmf_exp       : PMF expectation, clipped
+      reg           : regression head, clipped
+      blend_thresh  : s = w*pmf_exp + (1-w)*reg; re-zone by tuned cuts; clip s into
+                      the predicted zone bounds (decouples the zone decision from
+                      calibration -> tunes the hard Z2/Z3 boundary directly)."""
+    from metric import SEVERITY_BINS
+    s_exp = pmf @ centers
+    strat = dc.get("strategy", "blend_thresh")
+    if strat == "expected_cost":
+        return np.clip(expected_cost_decision(pmf, centers), 0, 100)
+    if strat == "pmf_exp":
+        return np.clip(s_exp, 0, 100)
+    if strat == "reg":
+        return np.clip(reg, 0, 100)
+    # blend_thresh
+    w = dc.get("w", 1.0); cuts = np.asarray(dc.get("cuts", [12.0, 35.0, 48.0]))
+    m = dc.get("margin", 0.5)
+    s = w * s_exp + (1 - w) * reg
+    z = np.digitize(s, cuts)                       # 0..3
+    lo = SEVERITY_BINS[z]; hi = SEVERITY_BINS[z + 1]
+    return np.clip(np.clip(s, lo + m, hi - m), 0, 100)
+
+
 def predict_test(cfg, log=print):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     out = Path(cfg.out_dir)
@@ -339,11 +366,14 @@ def predict_test(cfg, log=print):
     centers = cfg.centers
     models = sorted(out.glob("model_f*.pt"))
     assert models, "no fold models found"
-    oof = np.load(out / "oof.npz"); T = float(oof["T"])
+    oof = np.load(out / "oof.npz")
+    dc = json.load(open(out / "decision.json")) if (out / "decision.json").exists() else {"strategy": "expected_cost"}
+    T = float(dc.get("T", oof["T"]))
     ds = ChemDataset(test, cfg, False, None, None)
     dl = DataLoader(ds, batch_size=cfg.batch_size * 2, shuffle=False, num_workers=cfg.num_workers, pin_memory=True)
     from scipy.special import softmax
     pmf_sum = np.zeros((len(test), cfg.n_bins), np.float64)
+    reg_sum = np.zeros(len(test), np.float64); nviews = 0
     for mp in models:
         ckpt = torch.load(mp, map_location=device)
         model = Net(cfg.backbone, cfg.n_bins, False).to(device); model.load_state_dict(ckpt["sd"]); model.eval()
@@ -353,11 +383,15 @@ def predict_test(cfg, log=print):
                 x = b["x"].to(device)
                 for xx in (x, torch.flip(x, [3])):    # hflip TTA
                     with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=device == "cuda"):
-                        cl, _ = model(xx)
+                        cl, rg = model(xx)
                     pmf_sum[ptr:ptr + len(x)] += softmax(cl.float().cpu().numpy() / T, 1)
+                    reg_sum[ptr:ptr + len(x)] += torch.sigmoid(rg).float().cpu().numpy() * 100
                 ptr += len(x)
+        nviews += 2
     pmf = pmf_sum / pmf_sum.sum(1, keepdims=True)
-    pred = np.clip(expected_cost_decision(pmf, centers), 0, 100)
+    reg = reg_sum / nviews
+    pred = np.clip(apply_decision(pmf, reg, centers, dc), 0, 100)
+    log(f"decision: {dc}")
     sub = pd.DataFrame({"id": test.id, "interface_burden": pred})
     sub.to_csv(out / "submission.csv", index=False)
     log(f"wrote {out/'submission.csv'} rows={len(sub)} pred[min/mean/max]={pred.min():.1f}/{pred.mean():.1f}/{pred.max():.1f}")

@@ -44,7 +44,10 @@ Working log of challenge facts, EDA, validation, decisions, and runs.
 - Lightning A100 (~3 h HARD cap; do not idle): final 384-res sweeps/ensemble.
 
 ## CV / Run log
-- (to fill) — every run logs: config, OOF metric + component breakdown, zone accuracy, per-fold spread, change vs previous.
+- **Pipeline validated.** Critical bug found+fixed: OOF predictions were scattered to LOCAL (reset) indices instead of GLOBAL df positions → garbage OOF (score 56.1, zone_acc 0.186, i.e. worse than constant). Fix: ChemDataset returns the original global index. Also unified train/val load scale (1.12x + center-crop, removes FixRes mismatch).
+- **Run A (fold-0 only, nano, 320x192, 16ep, EMA, hflip+colorjitter+C-Mixup):** corrected OOF score **14.29**, zone_acc 0.746, **Spearman(pred,y)=0.92 on held-out experiments** → model generalizes OOD, no collapse. pmf-expectation (13.10) currently beats expected-cost decision (14.29) → decision/calibration needs tuning on the full ensembled OOF. Hardest errors: middle zones; biggest leak Z2→Z3 at the 48 boundary (122/245 true-Z2 predicted Z3).
+- **Run B (full 5-fold, nano, 320x192, 16ep):** in progress (baseline CV). Next: decision_opt.py on full OOF (tune blend/cuts), then iterate (tiny backbone, 384 res, multi-seed ensemble, aug A/B).
+- Trivial baselines to beat: best-constant 45.2; oracle-perfect-zone 0.82.
 
 ## Submissions
 - (to fill) — public score vs OOF, exact change per submission.
