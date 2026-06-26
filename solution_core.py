@@ -71,12 +71,14 @@ class Config:
     hue_jitter: float = _env("HUE", 0.045, float)      # hue rotation (reagent-colour nuisance; raise to ~0.5 for invariance)
     gray_p: float = _env("GRAY_P", 0.1, float)
     gray_input: bool = _env("GRAY_INPUT", 0, int) == 1  # convert to grayscale always (full colour-invariance)
+    aspect_mode: str = _env("ASPECT", "squish", str)    # squish (resize to HxW) | pad (preserve aspect + letterbox)
     mixstyle: bool = _env("MIXSTYLE", 0, int) == 1
     mixstyle_p: float = _env("MIXSTYLE_P", 0.5, float)
     drop_path: float = _env("DROP_PATH", 0.0, float)
     num_workers: int = _env("NUM_WORKERS", 0, int)
     seed: int = _env("SEED", 42, int)
     fold_seed: int = _env("FOLD_SEED", 42, int)   # FIXED across seeds so OOF aligns for ensembling
+    cv_mode: str = _env("CV_MODE", "random")      # random (standard StratifiedKFold) | group (leave-experiment-out)
     smoke: bool = _env("SMOKE", 0, int) == 1
     cache: bool = _env("CACHE", 0, int) == 1
 
@@ -122,13 +124,19 @@ def compute_groups(df, data_root, tol_abs=2):
     _, lab = np.unique(lab, return_inverse=True)
     return lab
 
-def make_folds(df, groups, n_folds, seed):
-    """StratifiedGroupKFold on (zone x group): balance zones, never split a group."""
-    from sklearn.model_selection import StratifiedGroupKFold
+def make_folds(df, groups, n_folds, seed, cv_mode="random"):
+    """random: standard StratifiedKFold on zone (train normally on the actual data).
+    group: StratifiedGroupKFold leave-experiment-out (size groups) — kept for diagnostics."""
+    from sklearn.model_selection import StratifiedKFold, StratifiedGroupKFold
     zone = to_zone(df.interface_burden.values)
-    skf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=seed)
     fold = np.full(len(df), -1)
-    for f, (_, va) in enumerate(skf.split(df, zone, groups)):
+    if cv_mode == "group":
+        skf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+        it = skf.split(df, zone, groups)
+    else:
+        skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+        it = skf.split(df, zone)
+    for f, (_, va) in enumerate(it):
         fold[va] = f
     assert (fold >= 0).all()
     return fold
@@ -226,7 +234,8 @@ class ChemDataset(Dataset):
         self.ids = self.df.id.values
     def __len__(self): return len(self.df)
     def _load(self, i):
-        if self.store is not None:                    # fast path: from RAM, no disk
+        pad = self.cfg.aspect_mode == "pad"
+        if self.store is not None and not pad:        # fast path: from RAM, no disk (squish only)
             a = self.store[self.ids[i]]
             if a.shape[0] != self.load_h or a.shape[1] != self.load_w:
                 a = cv2.resize(a, (self.load_w, self.load_h), interpolation=cv2.INTER_AREA)
@@ -234,9 +243,17 @@ class ChemDataset(Dataset):
         key = int(self.orig_idx[i])     # GLOBAL key: cache shared safely across folds
         if self.cache is not None and key in self.cache:
             return self.cache[key]
-        p = Path(self.cfg.data_root) / self.df.image_path.iloc[i]
-        im = Image.open(p).convert("RGB").resize((self.load_w, self.load_h), Image.BILINEAR)
-        a = np.asarray(im, dtype=np.uint8)
+        im = Image.open(Path(self.cfg.data_root) / self.df.image_path.iloc[i]).convert("RGB")
+        if pad:                                       # preserve aspect, letterbox-pad to (load_h,load_w)
+            ow, oh = im.size
+            s = min(self.load_w / ow, self.load_h / oh)
+            nw, nh = max(1, int(round(ow * s))), max(1, int(round(oh * s)))
+            im = im.resize((nw, nh), Image.BILINEAR)
+            a = np.zeros((self.load_h, self.load_w, 3), np.uint8)
+            top, left = (self.load_h - nh) // 2, (self.load_w - nw) // 2
+            a[top:top + nh, left:left + nw] = np.asarray(im, np.uint8)
+        else:                                         # squish to fixed shape
+            a = np.asarray(im.resize((self.load_w, self.load_h), Image.BILINEAR), dtype=np.uint8)
         if self.cache is not None: self.cache[key] = a
         return a
     def __getitem__(self, i):
@@ -403,8 +420,8 @@ def run_cv(cfg, log=print):
     global _STORE
     _STORE = load_store("train")
     if _STORE is not None: log(f"RAM store loaded: {len(_STORE)} train images")
-    groups = compute_groups(df, cfg.data_root)
-    fold_arr = make_folds(df, groups, cfg.n_folds, cfg.fold_seed)
+    groups = compute_groups(df, cfg.data_root) if cfg.cv_mode == "group" else np.arange(len(df))
+    fold_arr = make_folds(df, groups, cfg.n_folds, cfg.fold_seed, cfg.cv_mode)
     log(f"groups={groups.max()+1} folds={cfg.n_folds} | fold sizes={np.bincount(fold_arr).tolist()}")
     centers = cfg.centers
     cache = {} if cfg.cache else None
