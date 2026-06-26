@@ -1,0 +1,14 @@
+{
+  "id": "nakuls1nha/chem-confirm512",
+  "title": "chem-confirm512",
+  "code_file": "confirm512.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": ["nakuls1nha/chem-phase-interface", "nakuls1nha/chem-code"],
+  "competition_sources": [],
+  "kernel_sources": []
+}
