@@ -1,12 +1,11 @@
-import os, sys, glob
+import os, sys, glob, time
 import numpy as np, pandas as pd, torch
 from scipy.special import softmax
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import solution_core as S
 from metric import expected_cost_decision, to_zone
 
-DATA = os.environ.get("DATA_ROOT", "dataset/public")
+DATA = os.environ.get("DATA_ROOT", r"G:/Datacurve/eris/Chemical Phase dataset/public")
 OUT = os.environ.get("OUT_DIR", "working/full320")
 SEEDS = int(os.environ.get("SEEDS", "3"))
 EP = int(os.environ.get("EP", "18"))
@@ -27,15 +26,19 @@ cfg.num_workers = 0
 cfg.cache = True
 cfg.fold_seed = 42
 os.environ["FULL_SEEDS"] = ",".join(str(42 + i) for i in range(SEEDS))
+t0 = time.time()
 S.train_full(cfg)
+print(f"train done {(time.time()-t0)/60:.1f} min", flush=True)
 
 test = pd.read_csv(os.path.join(DATA, "test.csv"))
 centers = cfg.centers
 S._STORE = None
 cache = {}
 models = sorted(glob.glob(OUT + "/model_*.pt"))
-assert models, f"no models in {OUT}"
+print(f"predict with {len(models)} models", flush=True)
 pmf_sum = np.zeros((len(test), cfg.n_bins), np.float64)
+reg_sum = np.zeros(len(test), np.float64)
+nv = 0
 for mp in models:
     ck = torch.load(mp, map_location=dev)
     m = S.Net(cfg.backbone, cfg.n_bins, False).to(dev)
@@ -51,8 +54,10 @@ for mp in models:
                 with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=dev == "cuda"):
                     cl, rg = m(xx)
                 pmf_sum[ptr:ptr + len(x)] += softmax(cl.float().cpu().numpy() / T, 1)
+                reg_sum[ptr:ptr + len(x)] += torch.sigmoid(rg).float().cpu().numpy() * 100
             ptr += len(x)
+    nv += 2
 pmf = pmf_sum / pmf_sum.sum(1, keepdims=True)
 pred = np.clip(expected_cost_decision(pmf, centers), 0, 100)
 pd.DataFrame({"id": test.id, "interface_burden": pred}).to_csv("submission.csv", index=False)
-print(f"wrote submission.csv models={len(models)} mean={pred.mean():.1f} zones={np.bincount(to_zone(pred), minlength=4).tolist()}", flush=True)
+print(f"wrote submission.csv mean={pred.mean():.1f} zones={np.bincount(to_zone(pred), minlength=4).tolist()}", flush=True)
