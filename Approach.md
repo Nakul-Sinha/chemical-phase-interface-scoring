@@ -1,6 +1,6 @@
-# Approach — Chemical Phase Interface Assessment
+# Approach: Chemical Phase Interface Assessment
 
-A research-backed solution for predicting an ordinal `interface_burden` index (0–100)
+A research-backed solution for predicting an ordinal `interface_burden` index (0 to 100)
 from a single photo of a chemical vessel. Every decision below is grounded in **(a)**
 direct measurement of the public data (see `eda/`) and **(b)** a 3-agent deep-research
 review (papers + repos, cited in `research_findings.md`).
@@ -32,7 +32,7 @@ extreme_miss = (y≤12 & pred>25) or (y≥48 & pred<40)
 | Property | Value | Design consequence |
 |---|---|---|
 | Train / test | 4,770 / 1,261 | Medium data → pretrained backbone, augmentation, CV, ensembling. |
-| Label range | **0–67** (not 0–100), multimodal (spikes ~4/47/51/62) | Bins only need to span [0,68]; Z3 in practice is [48,67]. |
+| Label range | **0 to 67** (not 0 to 100), multimodal (spikes ~4/47/51/62) | Bins only need to span [0,68]; Z3 in practice is [48,67]. |
 | Zone balance | Z0 20% / Z1 19% / Z2 22% / Z3 38% | Mild imbalance; Z3 majority. |
 | Images | **all RGB**, **tall portrait** vessels, aspect ≈0.47, median 336×739 | Color matters; **vertical structure carries the phase-layer signal** → tall fixed input, **no vertical flip**. |
 | Visual cue | turbidity/milkiness, suspended solids, layering, dark/heterogeneous regions; heavy **glare** | Texture+layering task; augment for glare/lighting. |
@@ -48,36 +48,36 @@ real train→test shift. *(Compliance: size used only to build folds; all images
 fixed shape so the model sees pixels only.)*
 
 ## 4. Model
-- **Backbone:** ConvNeXt-V2 (`convnextv2_nano/tiny.fcmae_ft_in22k_in1k`) — CNNs beat transformers at
+- **Backbone:** ConvNeXt-V2 (`convnextv2_nano/tiny.fcmae_ft_in22k_in1k`), CNNs beat transformers at
   this data scale; FCMAE pretraining specifically helps fine-tuning.
 - **Pooling:** **GeM** (learnable, > global-average for texture/fine-structure).
 - **Two heads from the pooled feature:**
   - **SORD soft-ordinal head** over K=69 bins spanning [0,68]: target = `softmax(−(center−y)²/2σ²)`,
-    trained with soft cross-entropy. Produces a **per-image PMF over burden** — the object the
+    trained with soft cross-entropy. Produces a **per-image PMF over burden**: the object the
     decision layer needs. Soft labels also regularize and absorb ±1-bin label noise.
   - **Regression head** (sigmoid·100, BCE-on-[0,1]): a robust point estimate and ensemble member.
 - **Input:** resize to a tall fixed shape (320×192 for iteration → 384×224 final), ImageNet norm.
 
-## 5. The decision layer — the metric exploit (biggest single lever)
+## 5. The decision layer: the metric exploit (biggest single lever)
 Because the metric is fully known, the optimal output minimizes **posterior expected cost**:
 `a* = argmin_a Σ_y p(y)·L(a,y)`, with `L` the exact published metric and `p(y)` the model's PMF.
 We:
 1. **Ensemble** PMFs across folds/seeds (+ hflip TTA) and **temperature-calibrate** on OOF.
 2. Choose the output per `metric.expected_cost_decision`, **or** a tuned `blend_thresh` decision
    (`decision_opt.py`) that places the zone cutpoints (esp. the Z2/Z3 boundary) on a blended
-   `w·pmf_exp + (1−w)·reg` score — chosen by whichever wins on OOF, with a per-fold stability check
+   `w·pmf_exp + (1−w)·reg` score, chosen by whichever wins on OOF, with a per-fold stability check
    to avoid overfitting the decision.
 
 This decouples "get the zone right" (0.80 of the score) from raw calibration and directly targets
 the hard boundary. Always-safe: clip to the observed train range.
 
-## 6. Training recipe (OOD-robust — the challenge's explicit warning)
+## 6. Training recipe (OOD-robust: the challenge's explicit warning)
 - **Augment LIGHTLY, preserve physics:** horizontal flip **only** (vertical order is physical:
   solids sink, headspace rises); **light** colour/contrast/hue jitter (≈0.3) + a touch of grayscale;
-  mild blur/noise for glare/compression; **C-Mixup** (mix only close-burden pairs — vanilla mixup is
+  mild blur/noise for glare/compression; **C-Mixup** (mix only close-burden pairs, vanilla mixup is
   invalid for a continuous target). **Empirically, going harder hurt**: MixStyle and strong colour
-  augmentation *worsened* OOD here, because — contrary to the usual "destroy the colour-palette
-  shortcut" advice — **colour/intensity is the genuine turbidity signal**, not a spurious shortcut.
+  augmentation *worsened* OOD here, because, contrary to the usual "destroy the colour-palette
+  shortcut" advice, **colour/intensity is the genuine turbidity signal**, not a spurious shortcut.
 - **Optimizer:** AdamW, cosine schedule + warmup, differential LR (head > backbone), AMP, **EMA**
   weights (flat minima; ConvNeXt is LayerNorm so no BN-recompute needed).
 - **Loss:** soft-CE (SORD) + 0.3·BCE(regression).
@@ -86,7 +86,7 @@ the hard boundary. Always-safe: clip to the observed train range.
 Average fold (and seed/backbone) PMFs + regression with hflip TTA → temperature → tuned decision →
 clip → RLE-free CSV (`id,interface_burden`). Strict `validate_submission.py` before any submit.
 
-## 8. Results (honest leave-experiment-out 5-fold OOF on H100 — lower is better)
+## 8. Results (honest leave-experiment-out 5-fold OOF on H100: lower is better)
 | Run | Config | OOF score | zone_acc | Notes |
 |---|---|---|---|---|
 | baseline-constant | predict 50.5 | 45.21 | 0.38 | trivial floor |
@@ -94,23 +94,23 @@ clip → RLE-free CSV (`id,interface_burden`). Strict `validate_submission.py` b
 | nano320 | convnextv2_nano 320×192 18ep b32 | **24.96** | 0.601 | best single config |
 | tiny384 | convnextv2_tiny 384×224 18ep | 31.41 | 0.530 | bigger+hi-res OVERFITS experiments → worse OOD |
 | +MixStyle | nano320 + MixStyle | 27.43 | 0.578 | hurts (perturbs the turbidity stats = signal) |
-| +strong-aug+reg | nano320 + MixStyle+colour+drop_path+WD | 28.66 | 0.581 | worst — aggressive aug destroys the colour/intensity cue |
+| +strong-aug+reg | nano320 + MixStyle+colour+drop_path+WD | 28.66 | 0.581 | worst, aggressive aug destroys the colour/intensity cue |
 | batch16 | nano320 b16 | 27.05 | 0.592 | b32 better |
 | femto | convnextv2_femto 320×192 | 25.59 | **0.621** | close 2nd, adds diversity |
 | 384×192 / 448×256 | nano, taller/higher-res | ≈28 | 0.57 | higher res does NOT help (coarse milkiness survives downscale; fine detail invites memorization) |
-| 5-seed nano ensemble | OOF-avg PMF + honest decision | **25.93** | 0.610 | stable estimate; seed range was 22.9–28.2 |
+| 5-seed nano ensemble | OOF-avg PMF + honest decision | **25.93** | 0.610 | stable estimate; seed range was 22.9 to 28.2 |
 | **+ within-experiment smoothing** | avg PMF across same-experiment frames | **25.28** | **0.622** | +0.65 on OOF; **much larger on test** (84.6% of test frames are in multi-frame groups vs train mostly singletons) |
-| **FINAL submission** | 10× full-data nano (100% train) + 25 fold models + hflip TTA + smoothing | — | — | strongest models, can't be CV'd; honest proxy ≈ 24–25, lower expected on test |
+| **FINAL submission** | 10× full-data nano (100% train) + 25 fold models + hflip TTA + smoothing |  |, | strongest models, can't be CV'd; honest proxy ≈ 24 to 25, lower expected on test |
 
-*Caveat: per-seed variance is large (±~5) — single runs (e.g. an early fold scored 14, one seed 22.9)
-are NOT representative; only ensembled/held-out numbers are trustworthy. The public LB sits at 18–23 vs
+*Caveat: per-seed variance is large (±~5), single runs (e.g. an early fold scored 14, one seed 22.9)
+are NOT representative; only ensembled/held-out numbers are trustworthy. The public LB sits at 18 to 23 vs
 our ~25 honest CV: our CV is deliberately harsh (leave-experiment-out), and the LB is a (possibly easier)
-test subset — so the real submission may score better than the CV suggests.*
+test subset, so the real submission may score better than the CV suggests.*
 
 ### Within-experiment smoothing (the test-structure lever)
 Test images are video frames; **84.6% of test frames share an experiment with other frames** (54 groups
 of ≥3 frames, up to 94 each), and within an experiment the true burden is ~constant (intra-size-group std
-0.68). So we **average the ensemble PMF across frames of the same experiment** before the decision — a
+0.68). So we **average the ensemble PMF across frames of the same experiment** before the decision, a
 robust video-style inference that fixes borderline frames by consensus. The learned model is the only
 predictor; grouping is post-processing (the rules permit "rule-based image features as preprocessing").
 Validated +0.65 on OOF (where train is mostly singletons, so this *under*-states the test gain). We ship
@@ -122,13 +122,13 @@ both `submission_smoothed.csv` (primary) and `submission_perframe.csv` (complian
   ensembling** (the main reliable lever given high CV variance); the model genuinely learns the
   turbidity/layering signal (Spearman ~0.74 on held-out experiments).
 - **Didn't work (important negative results):** **bigger models / higher resolution OVERFIT the
-  training experiments → worse OOD**; **MixStyle and aggressive colour/style augmentation HURT** —
+  training experiments → worse OOD**; **MixStyle and aggressive colour/style augmentation HURT**: 
   unlike typical "kill the colour-palette shortcut" advice, here colour/intensity *is* the genuine
   turbidity signal, so destroying it removes signal. Smaller batch (16) and stochastic-depth did not
   help. ⇒ the winning recipe is a **small backbone + light augmentation + ensembling**, not capacity
   or heavy regularization.
 - **Bug caught:** OOF index misalignment (local vs global) silently produced worse-than-constant
-  scores (56.1); fixed. And the decision tuner initially overfit OOF (degenerate cuts) — fixed to
+  scores (56.1); fixed. And the decision tuner initially overfit OOF (degenerate cuts), fixed to
   select on the per-fold **held-out** score. Lesson: always sanity-check OOF with Spearman + a zone
   confusion matrix, and select post-processing on held-out, never full-OOF.
 
