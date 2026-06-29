@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-DATA_ROOT = Path(os.environ.get("DATA_ROOT", r"G:/Datacurve/eris/Chemical Phase dataset/public"))
+DATA_ROOT = Path(os.environ.get("DATA_ROOT", r"G:/ml/data/Chemical Phase dataset/public"))
 sub_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("working/submission.csv")
 
 sub = pd.read_csv(sub_path)

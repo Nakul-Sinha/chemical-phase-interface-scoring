@@ -10,7 +10,7 @@ import numpy as np, pandas as pd
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor
 
-DATA = Path(os.environ.get("DATA_ROOT", r"G:/Datacurve/eris/Chemical Phase dataset/public"))
+DATA = Path(os.environ.get("DATA_ROOT", r"G:/ml/data/Chemical Phase dataset/public"))
 OUTDIR = Path(os.environ.get("STORE_DIR", r"C:/Users/nakul/chem_store"))
 OUTDIR.mkdir(parents=True, exist_ok=True)
 HS, WS = int(os.environ.get("STORE_H", 448)), int(os.environ.get("STORE_W", 256))

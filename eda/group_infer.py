@@ -24,7 +24,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 from metric import to_zone
 
-DATA_ROOT = Path(os.environ.get("DATA_ROOT", r"G:/Datacurve/eris/Chemical Phase dataset/public"))
+DATA_ROOT = Path(os.environ.get("DATA_ROOT", r"G:/ml/data/Chemical Phase dataset/public"))
 OUT = REPO / "eda" / "out"; OUT.mkdir(parents=True, exist_ok=True)
 
 

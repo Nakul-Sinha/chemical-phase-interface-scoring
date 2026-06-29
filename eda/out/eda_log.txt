@@ -41,5 +41,5 @@ aspect ratio min/median/max: 0.403 0.469 0.54
 filesize KB median: 53
   near-grayscale: 0/20
 
-saved G:\Datacurve\eris\-Chemical-Phase-Interface-Assessment\eda\out\label_hist.png
-saved G:\Datacurve\eris\-Chemical-Phase-Interface-Assessment\eda\out\montage_by_zone.png
+saved G:\ml\data\-Chemical-Phase-Interface-Assessment\eda\out\label_hist.png
+saved G:\ml\data\-Chemical-Phase-Interface-Assessment\eda\out\montage_by_zone.png

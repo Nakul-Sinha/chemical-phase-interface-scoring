@@ -45,7 +45,7 @@ def _env(k, d, cast=str):
 
 @dataclass
 class Config:
-    data_root: str = _env("DATA_ROOT", r"G:/Datacurve/eris/Chemical Phase dataset/public")
+    data_root: str = _env("DATA_ROOT", r"G:/ml/data/Chemical Phase dataset/public")
     out_dir: str = _env("OUT_DIR", "working")
     backbone: str = _env("BACKBONE", "convnextv2_nano.fcmae_ft_in22k_in1k")
     pretrained: bool = _env("PRETRAINED", 1, int) == 1

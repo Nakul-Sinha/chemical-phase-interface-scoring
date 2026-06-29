@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import solution_core as S
 from metric import expected_cost_decision, to_zone
 
-DATA = os.environ.get("DATA_ROOT", r"G:/Datacurve/eris/Chemical Phase dataset/public")
+DATA = os.environ.get("DATA_ROOT", r"G:/ml/data/Chemical Phase dataset/public")
 OUT = os.environ.get("OUT_DIR", "working/full320")
 T = float(os.environ.get("T", "2.75"))
 dev = "cuda" if torch.cuda.is_available() else "cpu"

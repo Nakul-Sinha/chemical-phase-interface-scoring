@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from metric import evaluate, to_zone
 
 oof_dir = sys.argv[1]
-train_csv = sys.argv[2] if len(sys.argv) > 2 else r"G:/Datacurve/eris/Chemical Phase dataset/public/train.csv"
+train_csv = sys.argv[2] if len(sys.argv) > 2 else r"G:/ml/data/Chemical Phase dataset/public/train.csv"
 tb = pd.read_csv(train_csv).interface_burden.values
 
 def calib(v, ref):
